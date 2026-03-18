@@ -4,20 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { getPreviewScale } from "@/lib/preview-scale"
-import { useApiCall } from "@/hooks/useApiCall"
-import LoadingOverlay from "@/components/LoadingOverlay"
 import ErrorBanner from "@/components/ErrorBanner"
-
-async function imageUrlToBase64(url: string): Promise<{ base64: string; mediaType: string }> {
-  const res = await fetch(url)
-  const blob = await res.blob()
-  const buffer = await blob.arrayBuffer()
-  const base64 = btoa(
-    new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-  )
-  const mediaType = blob.type || "image/png"
-  return { base64, mediaType }
-}
 
 async function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
   const buffer = await file.arrayBuffer()
@@ -27,19 +14,26 @@ async function fileToBase64(file: File): Promise<{ base64: string; mediaType: st
   return { base64, mediaType: file.type || "image/png" }
 }
 
+interface GeneratedImage {
+  url: string
+  status: "loading" | "done" | "error"
+  error?: string
+}
+
 export default function UploadPage() {
   const project = useProject()
   const dispatch = useDispatch()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { loading: generating, error: genError, elapsed, execute, clearError } = useApiCall()
 
-  const [dragging, setDragging] = useState(false)
   const [mode, setMode] = useState<"generate" | "upload">("generate")
+  const [dragging, setDragging] = useState(false)
+  const [images, setImages] = useState<GeneratedImage[]>([])
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const [describing, setDescribing] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
   const describeAbortRef = useRef<AbortController | null>(null)
   const autoFired = useRef(false)
-  // Track the latest image URL in a ref so describeImage never uses a stale closure
   const latestImageUrlRef = useRef(project.uploadedImage.url)
   latestImageUrlRef.current = project.uploadedImage.url
 
@@ -47,12 +41,15 @@ export default function UploadPage() {
     (p) => p.id === project.imagePrompts.selectedPromptId
   )
 
+  const isGenerating = images.some((img) => img.status === "loading")
+  const doneCount = images.filter((img) => img.status === "done").length
+
+  // ── Describe image for Step 5 ──────────────────────────────────
   const describeImage = useCallback(
     async (base64: string, mediaType: string) => {
       describeAbortRef.current?.abort()
       const controller = new AbortController()
       describeAbortRef.current = controller
-
       setDescribing(true)
       try {
         const res = await fetch("/api/describe-image", {
@@ -63,7 +60,6 @@ export default function UploadPage() {
         })
         if (!res.ok) return
         const data = await res.json()
-        // Use the ref to get the current URL, not the stale closure value
         const currentUrl = latestImageUrlRef.current
         if (data.description && currentUrl) {
           dispatch({
@@ -73,7 +69,6 @@ export default function UploadPage() {
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return
-        // Non-blocking — description is nice-to-have
       } finally {
         setDescribing(false)
       }
@@ -81,28 +76,112 @@ export default function UploadPage() {
     [dispatch]
   )
 
+  // ── Generate a single image ────────────────────────────────────
+  const generateOne = useCallback(
+    async (prompt: string, index: number) => {
+      setImages((prev) => {
+        const next = [...prev]
+        next[index] = { url: "", status: "loading" }
+        return next
+      })
+      try {
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || "Generation failed")
+        setImages((prev) => {
+          const next = [...prev]
+          next[index] = { url: data.imageUrl, status: "done" }
+          return next
+        })
+      } catch (err) {
+        setImages((prev) => {
+          const next = [...prev]
+          next[index] = {
+            url: "",
+            status: "error",
+            error: err instanceof Error ? err.message : "Failed",
+          }
+          return next
+        })
+      }
+    },
+    []
+  )
+
+  // ── Generate 4 images in parallel ──────────────────────────────
+  const generateAll = useCallback(async () => {
+    if (!selectedPrompt) return
+    setGenError(null)
+    setSelectedIdx(null)
+    setImages([
+      { url: "", status: "loading" },
+      { url: "", status: "loading" },
+      { url: "", status: "loading" },
+      { url: "", status: "loading" },
+    ])
+
+    // Fire all 4 in parallel with slight prompt variations
+    const basePrompt = selectedPrompt.text
+    const variations = [
+      basePrompt,
+      basePrompt + " — variation with slightly different camera angle and lighting mood",
+      basePrompt + " — variation with alternative color grading and atmosphere",
+      basePrompt + " — variation with different depth of field and subject placement",
+    ]
+
+    await Promise.allSettled(
+      variations.map((prompt, i) => generateOne(prompt, i))
+    )
+  }, [selectedPrompt, generateOne])
+
+  const generateAllRef = useRef(generateAll)
+  generateAllRef.current = generateAll
+
+  // ── Select an image from the grid ──────────────────────────────
+  const selectImage = useCallback(
+    (idx: number) => {
+      const img = images[idx]
+      if (!img || img.status !== "done") return
+
+      setSelectedIdx(idx)
+      dispatch({
+        type: "SET_UPLOADED_IMAGE",
+        payload: { url: img.url },
+      })
+
+      // Auto-describe the selected image
+      const match = img.url.match(/^data:([^;]+);base64,(.+)$/)
+      if (match) {
+        describeImage(match[2], match[1])
+      }
+    },
+    [images, dispatch, describeImage]
+  )
+
+  // ── File upload handler ────────────────────────────────────────
   const handleFile = useCallback(
     async (file: File) => {
-      // Validate file size (10MB max)
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image must be under 10MB. Try compressing it first.")
+        setGenError("Image must be under 10MB.")
         return
       }
-      // Revoke previous blob URL to prevent memory leak
       if (project.uploadedImage.url?.startsWith("blob:")) {
         URL.revokeObjectURL(project.uploadedImage.url)
       }
       const url = URL.createObjectURL(file)
-      dispatch({
-        type: "SET_UPLOADED_IMAGE",
-        payload: { url },
-      })
-      clearError()
+      dispatch({ type: "SET_UPLOADED_IMAGE", payload: { url } })
+      setGenError(null)
+      setImages([])
+      setSelectedIdx(null)
 
       const { base64, mediaType } = await fileToBase64(file)
       describeImage(base64, mediaType)
     },
-    [dispatch, describeImage, project.uploadedImage.url, clearError]
+    [dispatch, describeImage, project.uploadedImage.url]
   )
 
   const handleDrop = useCallback(
@@ -110,9 +189,7 @@ export default function UploadPage() {
       e.preventDefault()
       setDragging(false)
       const file = e.dataTransfer.files[0]
-      if (file && file.type.startsWith("image/")) {
-        handleFile(file)
-      }
+      if (file?.type.startsWith("image/")) handleFile(file)
     },
     [handleFile]
   )
@@ -122,63 +199,42 @@ export default function UploadPage() {
     if (file) handleFile(file)
   }
 
-  // Auto-fire image generation when arriving from "Select & Generate" (Step 3)
+  // ── Auto-fire when arriving from Step 3 with ?auto=1 ──────────
   useEffect(() => {
-    if (searchParams.get("auto") === "1" && selectedPrompt && !autoFired.current && !generating && !project.uploadedImage.url) {
+    if (
+      searchParams.get("auto") === "1" &&
+      selectedPrompt &&
+      !autoFired.current &&
+      !isGenerating &&
+      images.length === 0
+    ) {
       autoFired.current = true
-      handleGenerateRef.current()
+      generateAllRef.current()
     }
-  }, [searchParams, selectedPrompt, generating, project.uploadedImage.url])
+  }, [searchParams, selectedPrompt, isGenerating, images.length])
 
-  // Auto-advance to Step 5 after image is generated AND description is ready
+  // ── Auto-advance to Step 5 when image selected + described ────
   useEffect(() => {
     if (
       project.uploadedImage.url &&
       project.uploadedImage.aiDescription &&
       !describing &&
-      !generating &&
-      autoFired.current
+      !isGenerating &&
+      autoFired.current &&
+      selectedIdx !== null
     ) {
       dispatch({ type: "SET_STEP", payload: 5 })
       router.push("/create/copy?auto=1")
     }
-  }, [project.uploadedImage.url, project.uploadedImage.aiDescription, describing, generating, dispatch, router])
-
-  // Ref for handleGenerate so the auto-fire effect can call it
-  const handleGenerateRef = useRef<() => void>(() => {})
-
-  const handleGenerate = async () => {
-    if (!selectedPrompt) return
-
-    await execute(async () => {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: selectedPrompt.text }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Image generation failed")
-      }
-
-      dispatch({
-        type: "SET_UPLOADED_IMAGE",
-        payload: { url: data.imageUrl },
-      })
-
-      // Auto-describe the generated image (data URL already has base64)
-      const match = (data.imageUrl as string).match(
-        /^data:([^;]+);base64,(.+)$/
-      )
-      if (match) {
-        describeImage(match[2], match[1])
-      }
-    })
-  }
-
-  handleGenerateRef.current = handleGenerate
+  }, [
+    project.uploadedImage.url,
+    project.uploadedImage.aiDescription,
+    describing,
+    isGenerating,
+    selectedIdx,
+    dispatch,
+    router,
+  ])
 
   const proceed = () => {
     dispatch({ type: "SET_STEP", payload: 5 })
@@ -189,11 +245,11 @@ export default function UploadPage() {
 
   return (
     <div className="step-transition relative mx-auto max-w-3xl px-6 py-10">
-      {generating && <LoadingOverlay message="Generating image with Nano Banana Pro…" elapsed={elapsed}><p className="text-xs text-zinc-500">This usually takes 10–30 seconds</p></LoadingOverlay>}
-      <h1 className="text-2xl font-bold">Step 4: Generate or Upload Image</h1>
+      <h1 className="text-2xl font-bold">Step 4: Generate Images</h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Generate an image with AI using your prompt, or upload one you made
-        externally.
+        {images.length > 0
+          ? `${doneCount}/4 images generated. Pick your favorite.`
+          : "Generate 4 image variations from your prompt, or upload your own."}
       </p>
 
       {/* Selected prompt reminder */}
@@ -216,7 +272,7 @@ export default function UploadPage() {
               : "border border-zinc-700 text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          AI Generate
+          AI Generate (4x)
         </button>
         <button
           onClick={() => setMode("upload")}
@@ -230,120 +286,140 @@ export default function UploadPage() {
         </button>
       </div>
 
-      {/* Content area */}
       <div className="mt-6">
-        {!project.uploadedImage.url ? (
+        {mode === "generate" ? (
           <>
-            {mode === "generate" ? (
+            {/* 2x2 Image Grid */}
+            {images.length > 0 ? (
               <div className="space-y-4">
-                <button
-                  onClick={handleGenerate}
-                  disabled={generating || !selectedPrompt}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-700 py-16 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {generating ? (
-                    <>
-                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
-                      <span className="text-zinc-300">
-                        Generating with NanoBanana Pro…
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-zinc-300">
-                      Click to Generate Image
-                    </span>
-                  )}
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  {images.map((img, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => img.status === "done" && selectImage(idx)}
+                      disabled={img.status !== "done"}
+                      className={`relative aspect-square overflow-hidden rounded-lg border-2 transition-all ${
+                        selectedIdx === idx
+                          ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/30"
+                          : img.status === "done"
+                            ? "border-zinc-700 hover:border-zinc-500"
+                            : "border-zinc-800"
+                      }`}
+                    >
+                      {img.status === "loading" && (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-zinc-900">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" />
+                          <span className="text-xs text-zinc-500">Generating…</span>
+                        </div>
+                      )}
+                      {img.status === "done" && (
+                        <>
+                          <img
+                            src={img.url}
+                            alt={`Variation ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          {selectedIdx === idx && (
+                            <div className="absolute right-2 top-2 rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-bold text-white">
+                              Selected
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {img.status === "error" && (
+                        <div className="flex h-full w-full items-center justify-center bg-zinc-900 p-3 text-center">
+                          <p className="text-xs text-red-400">{img.error || "Failed"}</p>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
 
-                {genError && (
-                  <ErrorBanner error={genError} onRetry={handleGenerate} onDismiss={clearError} />
+                {/* Description status */}
+                {describing && selectedIdx !== null && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-zinc-400">
+                    <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" />
+                    Analyzing selected image…
+                  </div>
                 )}
+                {!describing && project.uploadedImage.aiDescription && selectedIdx !== null && (
+                  <div className="mx-auto max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-3">
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">AI Description</div>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-300">{project.uploadedImage.aiDescription}</p>
+                  </div>
+                )}
+
+                <div className="flex justify-center">
+                  <button
+                    onClick={generateAll}
+                    disabled={isGenerating}
+                    className="rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-40"
+                  >
+                    {isGenerating ? `Generating (${doneCount}/4)…` : "Regenerate All (4x)"}
+                  </button>
+                </div>
               </div>
             ) : (
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragging(true)
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={handleDrop}
-                className={`flex h-64 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
-                  dragging
-                    ? "border-white bg-zinc-800"
-                    : "border-zinc-700 hover:border-zinc-500"
-                }`}
-              >
-                <div className="text-4xl text-zinc-600">+</div>
-                <p className="mt-2 text-sm text-zinc-400">
-                  Drag &amp; drop your image here, or click to browse
-                </p>
-                <p className="mt-1 text-xs text-zinc-500">PNG, JPG, WebP</p>
-                <label className="mt-4 cursor-pointer rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800">
-                  Browse Files
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleChange}
-                    className="hidden"
-                  />
-                </label>
+              <div className="space-y-4">
+                <button
+                  onClick={generateAll}
+                  disabled={isGenerating || !selectedPrompt}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-700 py-16 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="text-zinc-300">
+                    Click to Generate 4 Image Variations
+                  </span>
+                </button>
+                {genError && (
+                  <div className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-300">
+                    {genError}
+                  </div>
+                )}
               </div>
             )}
           </>
         ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-center">
-              <div
-                className="relative overflow-hidden rounded-lg border border-zinc-700"
-                style={{
-                  width: project.format.width * scale,
-                  height: project.format.height * scale,
-                }}
-              >
-                <img
-                  src={project.uploadedImage.url}
-                  alt="Generated ad image"
-                  className="h-full w-full object-cover"
-                />
+          /* Upload mode */
+          project.uploadedImage.url && images.length === 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center">
+                <div
+                  className="relative overflow-hidden rounded-lg border border-zinc-700"
+                  style={{ width: project.format.width * scale, height: project.format.height * scale }}
+                >
+                  <img src={project.uploadedImage.url} alt="Uploaded" className="h-full w-full object-cover" />
+                </div>
+              </div>
+              {describing && (
+                <div className="flex items-center justify-center gap-2 text-sm text-zinc-400">
+                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" />
+                  Analyzing image…
+                </div>
+              )}
+              <div className="flex justify-center">
+                <label className="cursor-pointer rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                  Replace
+                  <input type="file" accept="image/*" onChange={handleChange} className="hidden" />
+                </label>
               </div>
             </div>
-            {/* Description status */}
-            {describing && (
-              <div className="flex items-center justify-center gap-2 text-sm text-zinc-400">
-                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" />
-                Analyzing image for copywriter…
-              </div>
-            )}
-            {!describing && project.uploadedImage.aiDescription && (
-              <div className="mx-auto max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-3">
-                <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                  AI Description
-                </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-300">
-                  {project.uploadedImage.aiDescription}
-                </p>
-              </div>
-            )}
-
-            <div className="flex justify-center gap-3">
-              <button
-                onClick={handleGenerate}
-                disabled={generating || !selectedPrompt}
-                className="rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {generating ? "Regenerating…" : "Regenerate"}
-              </button>
-              <label className="cursor-pointer rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800">
-                Replace with File
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleChange}
-                  className="hidden"
-                />
+          ) : (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              className={`flex h-64 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
+                dragging ? "border-white bg-zinc-800" : "border-zinc-700 hover:border-zinc-500"
+              }`}
+            >
+              <div className="text-4xl text-zinc-600">+</div>
+              <p className="mt-2 text-sm text-zinc-400">Drag &amp; drop or browse</p>
+              <label className="mt-4 cursor-pointer rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Browse Files
+                <input type="file" accept="image/*" onChange={handleChange} className="hidden" />
               </label>
             </div>
-          </div>
+          )
         )}
       </div>
 

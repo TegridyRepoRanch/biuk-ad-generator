@@ -197,6 +197,8 @@ export interface AdProject {
       id: string
       text: string
       isEdited: boolean
+      rank?: number
+      reason?: string
     }>
     selectedPromptId: string | null
   }
@@ -274,6 +276,8 @@ export interface ImagePromptResponse {
   prompts: Array<{
     id: string
     text: string
+    rank?: number
+    reason?: string
   }>
 }
 

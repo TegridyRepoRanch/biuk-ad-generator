@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { getMessageZonePosition } from "@/lib/layout-templates"
@@ -52,12 +52,28 @@ export default function ImagePromptsPage() {
       if (!data.prompts || data.prompts.length === 0) {
         throw new Error("No image prompts returned. Try regenerating.")
       }
+      // Sort by rank (best first) and store
+      const sorted = [...data.prompts].sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
       dispatch({
         type: "SET_IMAGE_PROMPTS",
-        payload: data.prompts.map((p) => ({ ...p, isEdited: false })),
+        payload: sorted.map((p) => ({ ...p, isEdited: false })),
       })
     })
   }, [selectedConcept, project.format, project.brief.creativeResearch, messageZonePosition, dispatch, execute])
+
+  // Auto-fire prompt generation when page loads with prerequisites and no prompts yet
+  const autoFired = useRef(false)
+  useEffect(() => {
+    if (
+      !autoFired.current &&
+      !loading &&
+      selectedConcept &&
+      project.imagePrompts.prompts.length === 0
+    ) {
+      autoFired.current = true
+      generatePrompts()
+    }
+  }, [selectedConcept, loading, project.imagePrompts.prompts.length, generatePrompts])
 
   const copyToClipboard = async (text: string, id: string) => {
     await navigator.clipboard.writeText(text)
@@ -116,10 +132,9 @@ export default function ImagePromptsPage() {
             </button>
           </div>
           <p className="text-sm text-zinc-400">
-            Edit if needed, then copy to your image generation tool. Select one
-            to continue.
+            Ranked by AI — #1 is the strongest. Click to generate that image.
           </p>
-          {project.imagePrompts.prompts.map((prompt) => (
+          {project.imagePrompts.prompts.map((prompt, idx) => (
             <div
               key={prompt.id}
               className={`rounded-lg border p-4 transition-colors ${
@@ -128,6 +143,22 @@ export default function ImagePromptsPage() {
                   : "border-zinc-700 bg-zinc-900"
               }`}
             >
+              {/* Rank badge + reasoning */}
+              <div className="mb-2 flex items-center gap-2">
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                  idx === 0
+                    ? "bg-emerald-500 text-black"
+                    : idx === 1
+                      ? "bg-zinc-600 text-zinc-200"
+                      : "bg-zinc-700 text-zinc-400"
+                }`}>
+                  #{prompt.rank ?? idx + 1}
+                </span>
+                {prompt.reason && (
+                  <span className="text-xs text-zinc-500">{prompt.reason}</span>
+                )}
+              </div>
+
               <textarea
                 value={prompt.text}
                 onChange={(e) =>
@@ -149,14 +180,13 @@ export default function ImagePromptsPage() {
                 <button
                   onClick={() => {
                     dispatch({ type: "SELECT_IMAGE_PROMPT", payload: prompt.id })
-                    // Auto-chain: select prompt → navigate to Step 4 → auto-generate
                     dispatch({ type: "SET_STEP", payload: 4 })
                     router.push("/create/upload?auto=1")
                   }}
                   className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     project.imagePrompts.selectedPromptId === prompt.id
                       ? "bg-white text-black"
-                      : "border border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                      : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
                   }`}
                 >
                   {project.imagePrompts.selectedPromptId === prompt.id

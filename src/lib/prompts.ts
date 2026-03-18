@@ -128,12 +128,19 @@ ABSOLUTE RULES:
 - Specify the aspect ratio in every prompt
 - Each of the 3 prompts must offer a meaningfully different visual interpretation — vary the subject, angle, or mood
 
+RANKING:
+- Rank the 3 prompts from best to worst (1 = best, 3 = weakest)
+- For each, include a 1-sentence reason WHY it ranks where it does
+- The #1 prompt should be the one most likely to stop the scroll AND leave clean text space
+
 Return your response as JSON:
 {
   "prompts": [
     {
       "id": "1",
-      "text": "The full image generation prompt..."
+      "text": "The full image generation prompt...",
+      "rank": 1,
+      "reason": "One sentence: why this is ranked here"
     }
   ]
 }`
