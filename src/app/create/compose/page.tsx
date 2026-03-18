@@ -423,7 +423,8 @@ export default function ComposePage() {
         </button>
         <button
           onClick={proceed}
-          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
+          disabled={!project.uploadedImage.url || !project.copy.selected}
+          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next: Export &rarr;
         </button>

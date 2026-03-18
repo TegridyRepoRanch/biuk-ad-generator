@@ -1,10 +1,22 @@
 "use client"
 
-import { createContext, useContext, useReducer, ReactNode, Dispatch } from "react"
+import { createContext, useContext, useReducer, useEffect, useState, ReactNode, Dispatch, useCallback } from "react"
 import { v4 as uuid } from "uuid"
 import { AdProject, ConceptAngle, CopyVariation, Platform, Rect, ContrastMethod, CTAStyle, GradientConfig } from "@/types/ad"
 import { platformSpecs } from "@/lib/platforms"
+import { saveImage, loadImage, clearImages } from "@/lib/image-store"
 
+// ─── Storage keys ──────────────────────────────────────────────────
+const STORAGE_KEY = "ad-creator-project"
+const IMG_KEY_UPLOADED = "img-uploaded"
+const IMG_KEY_EXPORT = "img-export"
+
+// Reference image keys — stored per-index
+function refImgKey(index: number) {
+  return `img-ref-${index}`
+}
+
+// ─── Default project ───────────────────────────────────────────────
 const defaultPlatform: Platform = "ig-feed-square"
 const spec = platformSpecs[defaultPlatform]
 
@@ -77,6 +89,52 @@ function createDefaultProject(): AdProject {
   }
 }
 
+// ─── Persistence helpers ───────────────────────────────────────────
+
+/**
+ * Serialize state to localStorage, stripping large image data URLs.
+ * Images are stored separately in IndexedDB.
+ */
+function saveToLocalStorage(state: AdProject) {
+  try {
+    const toStore = {
+      ...state,
+      // Replace image URLs with marker strings so we know to load from IndexedDB
+      uploadedImage: {
+        ...state.uploadedImage,
+        url: state.uploadedImage.url ? "__IDB__" : null,
+      },
+      brief: {
+        ...state.brief,
+        // Replace blob/data URLs with markers per index
+        referenceImages: state.brief.referenceImages.map((url) =>
+          url ? "__IDB_REF__" : ""
+        ),
+      },
+      export: {
+        ...state.export,
+        pngUrl: state.export.pngUrl ? "__IDB__" : null,
+      },
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore))
+  } catch {
+    // localStorage might be full or unavailable — non-critical
+    console.warn("Failed to save project state to localStorage")
+  }
+}
+
+function loadFromLocalStorage(): AdProject | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as AdProject
+  } catch {
+    return null
+  }
+}
+
+// ─── Actions ───────────────────────────────────────────────────────
+
 type Action =
   | { type: "SET_BRIEF"; payload: Partial<AdProject["brief"]> }
   | { type: "SET_CONCEPT_ANGLES"; payload: ConceptAngle[] }
@@ -97,6 +155,7 @@ type Action =
   | { type: "SET_EXPORT_URL"; payload: string }
   | { type: "SET_STEP"; payload: 1 | 2 | 3 | 4 | 5 | 6 | 7 }
   | { type: "RESET" }
+  | { type: "_HYDRATE_IMAGES"; payload: { uploadedUrl?: string | null; exportUrl?: string | null; referenceImages?: string[] } }
 
 function reducer(state: AdProject, action: Action): AdProject {
   const updated = { ...state, updatedAt: new Date().toISOString() }
@@ -218,21 +277,114 @@ function reducer(state: AdProject, action: Action): AdProject {
     case "RESET":
       return createDefaultProject()
 
+    case "_HYDRATE_IMAGES":
+      return {
+        ...state, // don't update updatedAt for hydration
+        uploadedImage: {
+          ...state.uploadedImage,
+          url: action.payload.uploadedUrl ?? state.uploadedImage.url,
+        },
+        brief: {
+          ...state.brief,
+          referenceImages: action.payload.referenceImages ?? state.brief.referenceImages,
+        },
+        export: {
+          ...state.export,
+          pngUrl: action.payload.exportUrl ?? state.export.pngUrl,
+        },
+      }
+
     default:
       return state
   }
 }
 
+// ─── Context ───────────────────────────────────────────────────────
+
 const ProjectContext = createContext<AdProject | null>(null)
 const DispatchContext = createContext<Dispatch<Action> | null>(null)
+const HydratedContext = createContext<boolean>(false)
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, null, createDefaultProject)
+  const [state, rawDispatch] = useReducer(reducer, null, () => {
+    // Try to hydrate from localStorage on initial render (SSR-safe: runs client-side in useReducer init)
+    if (typeof window === "undefined") return createDefaultProject()
+    return loadFromLocalStorage() ?? createDefaultProject()
+  })
+
+  const [hydrated, setHydrated] = useState(false)
+
+  // Wrapped dispatch that persists state + images
+  const dispatch: Dispatch<Action> = useCallback((action: Action) => {
+    rawDispatch(action)
+
+    // Side effects for image storage (fire-and-forget)
+    if (action.type === "SET_UPLOADED_IMAGE" && action.payload.url) {
+      saveImage(IMG_KEY_UPLOADED, action.payload.url).catch(console.warn)
+    }
+    if (action.type === "SET_EXPORT_URL") {
+      saveImage(IMG_KEY_EXPORT, action.payload).catch(console.warn)
+    }
+    if (action.type === "RESET") {
+      clearImages().catch(console.warn)
+      localStorage.removeItem(STORAGE_KEY)
+    }
+    if (action.type === "SET_BRIEF" && action.payload.referenceImages) {
+      // Save each new reference image to IndexedDB
+      action.payload.referenceImages.forEach((url, i) => {
+        if (url && !url.startsWith("__IDB")) {
+          saveImage(refImgKey(i), url).catch(console.warn)
+        }
+      })
+    }
+  }, [])
+
+  // Persist to localStorage on every state change (excluding images)
+  useEffect(() => {
+    saveToLocalStorage(state)
+  }, [state])
+
+  // Hydrate images from IndexedDB on mount
+  useEffect(() => {
+    async function hydrateImages() {
+      try {
+        const [uploadedUrl, exportUrl] = await Promise.all([
+          loadImage(IMG_KEY_UPLOADED),
+          loadImage(IMG_KEY_EXPORT),
+        ])
+
+        // Load any reference images
+        const refImages: string[] = []
+        for (let i = 0; i < state.brief.referenceImages.length; i++) {
+          const img = await loadImage(refImgKey(i))
+          refImages.push(img ?? "")
+        }
+
+        rawDispatch({
+          type: "_HYDRATE_IMAGES",
+          payload: {
+            uploadedUrl: uploadedUrl ?? undefined,
+            exportUrl: exportUrl ?? undefined,
+            referenceImages: refImages.length > 0 ? refImages : undefined,
+          },
+        })
+      } catch {
+        console.warn("Failed to hydrate images from IndexedDB")
+      } finally {
+        setHydrated(true)
+      }
+    }
+
+    hydrateImages()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount
 
   return (
     <ProjectContext.Provider value={state}>
       <DispatchContext.Provider value={dispatch}>
-        {children}
+        <HydratedContext.Provider value={hydrated}>
+          {children}
+        </HydratedContext.Provider>
       </DispatchContext.Provider>
     </ProjectContext.Provider>
   )
@@ -248,4 +400,8 @@ export function useDispatch() {
   const ctx = useContext(DispatchContext)
   if (!ctx) throw new Error("useDispatch must be used within ProjectProvider")
   return ctx
+}
+
+export function useHydrated() {
+  return useContext(HydratedContext)
 }

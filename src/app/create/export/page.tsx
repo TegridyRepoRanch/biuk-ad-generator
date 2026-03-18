@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 
@@ -140,6 +140,14 @@ export default function ExportPage() {
         ctx.shadowOffsetY = 2
       }
 
+      // Set up outlined-text stroke (CSS WebkitTextStroke has no Canvas equivalent)
+      const useOutline = project.format.contrastMethod === "outlined-text"
+      if (useOutline) {
+        ctx.strokeStyle = "rgba(0,0,0,0.5)"
+        ctx.lineWidth = 4
+        ctx.lineJoin = "round"
+      }
+
       const alignX =
         project.composition.headlineAlign === "center"
           ? tx + (width * 0.4)
@@ -148,6 +156,7 @@ export default function ExportPage() {
             : tx
 
       for (const l of lines) {
+        if (useOutline) ctx.strokeText(l, alignX, ty)
         ctx.fillText(l, alignX, ty)
         ty += project.composition.headlineFontSize * 1.15
       }
@@ -166,6 +175,11 @@ export default function ExportPage() {
           ctx.shadowColor = "rgba(0,0,0,0.6)"
           ctx.shadowBlur = 8
           ctx.shadowOffsetY = 2
+        }
+        if (useOutline) {
+          ctx.strokeStyle = "rgba(0,0,0,0.5)"
+          ctx.lineWidth = 3
+          ctx.strokeText(project.copy.selected.subhead, alignX, ty)
         }
         ctx.fillText(project.copy.selected.subhead, alignX, ty)
         ty += (project.composition.subheadFontSize || 28) * 1.15
@@ -217,6 +231,15 @@ export default function ExportPage() {
     dispatch({ type: "SET_EXPORT_URL", payload: dataUrl })
     setRendering(false)
   }, [project, width, height, dispatch])
+
+  // Auto-render on mount
+  const hasRendered = useRef(false)
+  useEffect(() => {
+    if (!hasRendered.current && canvasRef.current && project.uploadedImage.url) {
+      hasRendered.current = true
+      renderToCanvas()
+    }
+  }, [renderToCanvas, project.uploadedImage.url])
 
   const download = () => {
     if (!downloadUrl) return

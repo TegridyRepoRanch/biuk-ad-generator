@@ -73,6 +73,10 @@ export default function UploadPage() {
 
   const handleFile = useCallback(
     async (file: File) => {
+      // Revoke previous blob URL to prevent memory leak
+      if (project.uploadedImage.url?.startsWith("blob:")) {
+        URL.revokeObjectURL(project.uploadedImage.url)
+      }
       const url = URL.createObjectURL(file)
       dispatch({
         type: "SET_UPLOADED_IMAGE",
