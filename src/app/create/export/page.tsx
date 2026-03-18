@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
+import { getPreviewScale } from "@/lib/preview-scale"
 
 export default function ExportPage() {
   const project = useProject()
@@ -15,8 +16,7 @@ export default function ExportPage() {
   )
 
   const { width, height } = project.format
-  const maxPreview = 500
-  const previewScale = Math.min(maxPreview / width, maxPreview / height)
+  const previewScale = getPreviewScale(width, height)
 
   const renderToCanvas = useCallback(async () => {
     const canvas = canvasRef.current
@@ -26,7 +26,11 @@ export default function ExportPage() {
 
     canvas.width = width
     canvas.height = height
-    const ctx = canvas.getContext("2d")!
+    const ctx = canvas.getContext("2d")
+    if (!ctx) {
+      setRendering(false)
+      return
+    }
 
     // Draw background image
     if (project.uploadedImage.url) {
@@ -254,7 +258,7 @@ export default function ExportPage() {
     : undefined
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="text-2xl font-bold">Step 7: Export</h1>
       <p className="mt-1 text-sm text-zinc-400">
         Render your ad to PNG at exact platform dimensions ({width}x{height}).

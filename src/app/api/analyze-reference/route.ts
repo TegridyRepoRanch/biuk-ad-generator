@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const imageFile = formData.get("image") as File | null
-    const imageId = formData.get("imageId") as string
+    const imageId = (formData.get("imageId") as string) || `ref-${Date.now()}`
 
     if (!imageFile) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 })

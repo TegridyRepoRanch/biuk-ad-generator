@@ -1,24 +1,23 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { ConceptAngle, ConceptResponse } from "@/types/ad"
+import { useApiCall } from "@/hooks/useApiCall"
+import LoadingOverlay from "@/components/LoadingOverlay"
+import ErrorBanner from "@/components/ErrorBanner"
 
 export default function ConceptPage() {
   const project = useProject()
   const dispatch = useDispatch()
   const router = useRouter()
-
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, elapsed, execute, clearError } = useApiCall()
 
   const canGenerate = project.brief.description.trim().length > 10
 
   const generateConcepts = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
+    await execute(async () => {
       const res = await fetch("/api/concept", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -35,13 +34,12 @@ export default function ConceptPage() {
         throw new Error(data.error || "Failed to generate concepts")
       }
       const data: ConceptResponse = await res.json()
+      if (!data.angles || data.angles.length === 0) {
+        throw new Error("No concept angles returned. Try adding more detail to your brief.")
+      }
       dispatch({ type: "SET_CONCEPT_ANGLES", payload: data.angles })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setLoading(false)
-    }
-  }, [project.brief, dispatch])
+    })
+  }, [project.brief, dispatch, execute])
 
   const selectAngle = (angle: ConceptAngle) => {
     dispatch({ type: "SELECT_CONCEPT", payload: angle.id })
@@ -93,7 +91,8 @@ export default function ConceptPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="step-transition relative mx-auto max-w-3xl px-6 py-10">
+      {loading && <LoadingOverlay message="Generating concepts…" elapsed={elapsed} />}
       <h1 className="text-2xl font-bold">Step 1: Brief &amp; Concept</h1>
       <p className="mt-1 text-sm text-zinc-400">
         Describe what you need. Upload reference ads if you have them. Then
@@ -129,7 +128,7 @@ export default function ConceptPage() {
                 dispatch({ type: "SET_BRIEF", payload: { targetAudience: e.target.value } })
               }
               placeholder="e.g. Women 25-45, fitness enthusiasts"
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             />
           </div>
           <div>
@@ -143,7 +142,7 @@ export default function ConceptPage() {
                 dispatch({ type: "SET_BRIEF", payload: { campaignGoal: e.target.value } })
               }
               placeholder="e.g. Drive trial subscriptions"
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             />
           </div>
           <div>
@@ -157,7 +156,7 @@ export default function ConceptPage() {
                 dispatch({ type: "SET_BRIEF", payload: { brandVoice: e.target.value } })
               }
               placeholder="e.g. Bold, confident, playful"
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none"
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             />
           </div>
         </div>
@@ -197,17 +196,26 @@ export default function ConceptPage() {
         <button
           onClick={generateConcepts}
           disabled={!canGenerate || loading}
-          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {loading ? "Generating..." : "Generate Concept Angles"}
+          Generate Concept Angles
         </button>
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+        {error && <ErrorBanner error={error} onRetry={generateConcepts} onDismiss={clearError} />}
       </div>
 
       {/* Concept Angles */}
       {project.concept.angles.length > 0 && (
         <div className="mt-10">
-          <h2 className="text-lg font-semibold">Pick a Concept Angle</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Pick a Concept Angle</h2>
+            <button
+              onClick={generateConcepts}
+              disabled={loading}
+              className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
+            >
+              {loading ? "Regenerating..." : "Regenerate"}
+            </button>
+          </div>
           <div className="mt-4 space-y-3">
             {project.concept.angles.map((angle) => (
               <button
@@ -239,7 +247,7 @@ export default function ConceptPage() {
         <div className="mt-8 flex justify-end">
           <button
             onClick={proceed}
-            className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200"
+            className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]"
           >
             Next: Format &amp; Layout &rarr;
           </button>

@@ -211,6 +211,7 @@ export interface ImagePromptRequest {
   width: number
   height: number
   messageZonePosition: string
+  contrastMethod?: ContrastMethod
 }
 
 export interface ImagePromptResponse {

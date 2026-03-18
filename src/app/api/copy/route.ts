@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
       body.concept,
       body.imageDescription,
       body.messageZonePosition,
+      body.contrastMethod,
       body.targetAudience,
       body.campaignGoal,
       body.brandVoice

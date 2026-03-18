@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
+import { getPreviewScale } from "@/lib/preview-scale"
 
 export default function ComposePage() {
   const project = useProject()
@@ -11,8 +12,7 @@ export default function ComposePage() {
   const previewRef = useRef<HTMLDivElement>(null)
 
   const { width, height } = project.format
-  const maxPreview = 500
-  const scale = Math.min(maxPreview / width, maxPreview / height)
+  const scale = getPreviewScale(width, height)
 
   const [dragging, setDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -116,6 +116,15 @@ export default function ComposePage() {
               }}
             />
 
+            {/* Empty state when no copy selected */}
+            {!project.copy.selected && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <p className="rounded-lg bg-zinc-900/80 px-4 py-2 text-sm text-zinc-400">
+                  No copy selected — go back to Step 5
+                </p>
+              </div>
+            )}
+
             {/* Text Overlay (draggable) */}
             {project.copy.selected && (
               <div
@@ -127,11 +136,14 @@ export default function ComposePage() {
                   maxWidth: (width * 0.8) * scale,
                 }}
               >
-                {/* Solid block contrast */}
+                {/* Solid block contrast — sized to wrap the text content */}
                 {project.format.contrastMethod === "solid-block" && (
                   <div
-                    className="absolute inset-0 -m-2 rounded-lg"
-                    style={{ background: "rgba(0,0,0,0.7)" }}
+                    className="pointer-events-none absolute rounded-lg"
+                    style={{
+                      background: "rgba(0,0,0,0.7)",
+                      inset: `${-12 * scale}px ${-16 * scale}px`,
+                    }}
                   />
                 )}
 

@@ -13,7 +13,8 @@ export async function POST(req: NextRequest) {
       body.concept,
       body.messageZonePosition,
       body.width,
-      body.height
+      body.height,
+      body.contrastMethod
     )
 
     const message = await client.messages.create({

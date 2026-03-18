@@ -3,6 +3,10 @@
 import { useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
+import { getPreviewScale } from "@/lib/preview-scale"
+import { useApiCall } from "@/hooks/useApiCall"
+import LoadingOverlay from "@/components/LoadingOverlay"
+import ErrorBanner from "@/components/ErrorBanner"
 
 async function imageUrlToBase64(url: string): Promise<{ base64: string; mediaType: string }> {
   const res = await fetch(url)
@@ -27,10 +31,9 @@ export default function UploadPage() {
   const project = useProject()
   const dispatch = useDispatch()
   const router = useRouter()
+  const { loading: generating, error: genError, elapsed, execute, clearError } = useApiCall()
 
   const [dragging, setDragging] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [genError, setGenError] = useState<string | null>(null)
   const [mode, setMode] = useState<"generate" | "upload">("generate")
   const [describing, setDescribing] = useState(false)
   const describeAbortRef = useRef<AbortController | null>(null)
@@ -55,10 +58,10 @@ export default function UploadPage() {
         })
         if (!res.ok) return
         const data = await res.json()
-        if (data.description) {
+        if (data.description && project.uploadedImage.url) {
           dispatch({
             type: "SET_UPLOADED_IMAGE",
-            payload: { url: project.uploadedImage.url!, aiDescription: data.description },
+            payload: { url: project.uploadedImage.url, aiDescription: data.description },
           })
         }
       } catch (err) {
@@ -73,6 +76,11 @@ export default function UploadPage() {
 
   const handleFile = useCallback(
     async (file: File) => {
+      // Validate file size (10MB max)
+      if (file.size > 10 * 1024 * 1024) {
+        alert("Image must be under 10MB. Try compressing it first.")
+        return
+      }
       // Revoke previous blob URL to prevent memory leak
       if (project.uploadedImage.url?.startsWith("blob:")) {
         URL.revokeObjectURL(project.uploadedImage.url)
@@ -82,12 +90,12 @@ export default function UploadPage() {
         type: "SET_UPLOADED_IMAGE",
         payload: { url },
       })
-      setGenError(null)
+      clearError()
 
       const { base64, mediaType } = await fileToBase64(file)
       describeImage(base64, mediaType)
     },
-    [dispatch, describeImage]
+    [dispatch, describeImage, project.uploadedImage.url, clearError]
   )
 
   const handleDrop = useCallback(
@@ -110,10 +118,7 @@ export default function UploadPage() {
   const handleGenerate = async () => {
     if (!selectedPrompt) return
 
-    setGenerating(true)
-    setGenError(null)
-
-    try {
+    await execute(async () => {
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,8 +128,7 @@ export default function UploadPage() {
       const data = await res.json()
 
       if (!res.ok) {
-        setGenError(data.error || "Image generation failed")
-        return
+        throw new Error(data.error || "Image generation failed")
       }
 
       dispatch({
@@ -139,13 +143,7 @@ export default function UploadPage() {
       if (match) {
         describeImage(match[2], match[1])
       }
-    } catch (err) {
-      setGenError(
-        err instanceof Error ? err.message : "Network error — try again"
-      )
-    } finally {
-      setGenerating(false)
-    }
+    })
   }
 
   const proceed = () => {
@@ -153,13 +151,11 @@ export default function UploadPage() {
     router.push("/create/copy")
   }
 
-  const scale = Math.min(
-    500 / project.format.width,
-    500 / project.format.height
-  )
+  const scale = getPreviewScale(project.format.width, project.format.height)
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="step-transition relative mx-auto max-w-3xl px-6 py-10">
+      {generating && <LoadingOverlay message="Generating image with Nano Banana Pro…" elapsed={elapsed}><p className="text-xs text-zinc-500">This usually takes 10–30 seconds</p></LoadingOverlay>}
       <h1 className="text-2xl font-bold">Step 4: Generate or Upload Image</h1>
       <p className="mt-1 text-sm text-zinc-400">
         Generate an image with AI using your prompt, or upload one you made
@@ -226,9 +222,7 @@ export default function UploadPage() {
                 </button>
 
                 {genError && (
-                  <div className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-300">
-                    {genError}
-                  </div>
+                  <ErrorBanner error={genError} onRetry={handleGenerate} onDismiss={clearError} />
                 )}
               </div>
             ) : (
@@ -330,7 +324,7 @@ export default function UploadPage() {
         <button
           onClick={proceed}
           disabled={!project.uploadedImage.url}
-          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next: Generate Copy &rarr;
         </button>

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { getMessageZonePosition } from "@/lib/layout-templates"
 import { CopyVariation, CopyResponse } from "@/types/ad"
+import { useApiCall } from "@/hooks/useApiCall"
+import LoadingOverlay from "@/components/LoadingOverlay"
+import ErrorBanner from "@/components/ErrorBanner"
 
 function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
@@ -14,9 +17,7 @@ export default function CopyPage() {
   const project = useProject()
   const dispatch = useDispatch()
   const router = useRouter()
-
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, elapsed, execute, clearError } = useApiCall()
   const [imageDescription, setImageDescription] = useState(
     project.uploadedImage.aiDescription || ""
   )
@@ -48,21 +49,16 @@ export default function CopyPage() {
 
   const generateCopy = useCallback(async () => {
     if (!selectedConcept) return
-    setLoading(true)
-    setError(null)
-    try {
-      const description = imageDescription
-      if (!description) {
-        setError("Image description is required. Go back to Step 4 or wait for auto-analysis to finish.")
-        setLoading(false)
-        return
-      }
+    if (!imageDescription) {
+      return
+    }
+    await execute(async () => {
       const res = await fetch("/api/copy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           concept: selectedConcept,
-          imageDescription: description,
+          imageDescription,
           layout: project.format.layout,
           messageZonePosition,
           contrastMethod: project.format.contrastMethod,
@@ -76,12 +72,11 @@ export default function CopyPage() {
         throw new Error(data.error || "Failed to generate copy")
       }
       const data: CopyResponse = await res.json()
+      if (!data.variations || data.variations.length === 0) {
+        throw new Error("No copy variations returned. Try editing the image description or regenerating.")
+      }
       dispatch({ type: "SET_COPY_VARIATIONS", payload: data.variations })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong")
-    } finally {
-      setLoading(false)
-    }
+    })
   }, [
     selectedConcept,
     imageDescription,
@@ -89,6 +84,7 @@ export default function CopyPage() {
     project.brief,
     messageZonePosition,
     dispatch,
+    execute,
   ])
 
   const selectCopy = (variation: CopyVariation) => {
@@ -108,7 +104,8 @@ export default function CopyPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="step-transition relative mx-auto max-w-3xl px-6 py-10">
+      {loading && <LoadingOverlay message="Generating headlines…" elapsed={elapsed} />}
       <h1 className="text-2xl font-bold">Step 5: Headline Copy</h1>
       <p className="mt-1 text-sm text-zinc-400">
         AI analyzed your image automatically. Review the description below,
@@ -161,18 +158,27 @@ export default function CopyPage() {
       <div className="mt-6">
         <button
           onClick={generateCopy}
-          disabled={loading || !selectedConcept}
-          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={loading || !selectedConcept || !imageDescription}
+          className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {loading ? "Generating..." : "Generate Headlines"}
+          Generate Headlines
         </button>
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+        {error && <ErrorBanner error={error} onRetry={generateCopy} onDismiss={clearError} />}
       </div>
 
       {/* Copy Variations */}
       {project.copy.variations.length > 0 && (
         <div className="mt-8 space-y-4">
-          <h2 className="text-lg font-semibold">Pick Your Copy</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Pick Your Copy</h2>
+            <button
+              onClick={generateCopy}
+              disabled={loading}
+              className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
+            >
+              {loading ? "Regenerating..." : "Regenerate"}
+            </button>
+          </div>
           {project.copy.variations.map((variation) => {
             const hw = wordCount(variation.headline)
             const cw = wordCount(variation.cta)
@@ -236,7 +242,7 @@ export default function CopyPage() {
         <button
           onClick={proceed}
           disabled={!project.copy.selected}
-          className="rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next: Compose &rarr;
         </button>
