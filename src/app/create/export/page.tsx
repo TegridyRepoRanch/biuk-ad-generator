@@ -68,18 +68,66 @@ export default function ExportPage() {
       ctx.fillRect(0, 0, width, height)
     }
 
-    // Draw solid block contrast behind text
-    if (project.format.contrastMethod === "solid-block" && project.copy.selected) {
-      const tx = project.composition.textPosition.x
-      const ty = project.composition.textPosition.y
-      ctx.fillStyle = "rgba(0,0,0,0.7)"
-      ctx.fillRect(tx - 16, ty - 16, width * 0.7, 200)
-    }
-
-    // Draw headline
+    // Draw headline, subhead, and CTA
     if (project.copy.selected) {
       const tx = project.composition.textPosition.x
-      let ty = project.composition.textPosition.y
+      const startTy = project.composition.textPosition.y
+
+      // --- Measure total text block height first (for solid-block contrast) ---
+      const maxTextWidth = width * 0.75
+      let measureTy = startTy
+
+      // Measure headline lines
+      ctx.font = `${project.composition.headlineFontWeight} ${project.composition.headlineFontSize}px ${project.composition.headlineFontFamily}`
+      const words = project.copy.selected.headline.split(" ")
+      let line = ""
+      const lines: string[] = []
+      for (const word of words) {
+        const test = line ? `${line} ${word}` : word
+        if (ctx.measureText(test).width > maxTextWidth && line) {
+          lines.push(line)
+          line = word
+        } else {
+          line = test
+        }
+      }
+      if (line) lines.push(line)
+      measureTy += lines.length * project.composition.headlineFontSize * 1.15
+
+      // Measure subhead
+      if (project.copy.selected.subhead) {
+        measureTy += 8 + (project.composition.subheadFontSize || 28) * 1.15
+      }
+
+      // Measure CTA
+      const ctaStyle = project.composition.ctaStyle
+      measureTy += 16 + ctaStyle.fontSize + ctaStyle.padding.y * 2
+
+      const textBlockHeight = measureTy - startTy
+
+      // Measure widest line for block width
+      let maxLineWidth = 0
+      for (const l of lines) {
+        maxLineWidth = Math.max(maxLineWidth, ctx.measureText(l).width)
+      }
+      ctx.font = `700 ${ctaStyle.fontSize}px ${project.composition.headlineFontFamily}`
+      const ctaTextWidth = ctx.measureText(project.copy.selected.cta).width + ctaStyle.padding.x * 2
+      maxLineWidth = Math.max(maxLineWidth, ctaTextWidth)
+
+      // --- Draw solid block contrast behind text (now using real dimensions) ---
+      if (project.format.contrastMethod === "solid-block") {
+        const padding = 24
+        ctx.fillStyle = "rgba(0,0,0,0.7)"
+        ctx.fillRect(
+          tx - padding,
+          startTy - padding,
+          maxLineWidth + padding * 2,
+          textBlockHeight + padding * 2
+        )
+      }
+
+      // --- Now draw the actual text ---
+      let ty = startTy
 
       ctx.font = `${project.composition.headlineFontWeight} ${project.composition.headlineFontSize}px ${project.composition.headlineFontFamily}`
       ctx.fillStyle = project.composition.headlineColor
@@ -98,22 +146,6 @@ export default function ExportPage() {
           : project.composition.headlineAlign === "right"
             ? tx + (width * 0.7)
             : tx
-
-      // Word wrap headline
-      const maxTextWidth = width * 0.75
-      const words = project.copy.selected.headline.split(" ")
-      let line = ""
-      const lines: string[] = []
-      for (const word of words) {
-        const test = line ? `${line} ${word}` : word
-        if (ctx.measureText(test).width > maxTextWidth && line) {
-          lines.push(line)
-          line = word
-        } else {
-          line = test
-        }
-      }
-      if (line) lines.push(line)
 
       for (const l of lines) {
         ctx.fillText(l, alignX, ty)
@@ -145,7 +177,6 @@ export default function ExportPage() {
       // Draw CTA button
       ty += 16
       const cta = project.copy.selected.cta
-      const ctaStyle = project.composition.ctaStyle
       ctx.font = `700 ${ctaStyle.fontSize}px ${project.composition.headlineFontFamily}`
       const ctaWidth = ctx.measureText(cta).width + ctaStyle.padding.x * 2
       const ctaHeight = ctaStyle.fontSize + ctaStyle.padding.y * 2
@@ -225,18 +256,6 @@ export default function ExportPage() {
           {gradientCSS && (
             <div className="absolute inset-0" style={{ background: gradientCSS }} />
           )}
-          {project.format.contrastMethod === "solid-block" && project.copy.selected && (
-            <div
-              className="absolute rounded-lg"
-              style={{
-                left: (project.composition.textPosition.x - 16) * previewScale,
-                top: (project.composition.textPosition.y - 16) * previewScale,
-                width: width * 0.7 * previewScale,
-                height: 200 * previewScale,
-                background: "rgba(0,0,0,0.7)",
-              }}
-            />
-          )}
           {project.copy.selected && (
             <div
               className="absolute"
@@ -244,6 +263,9 @@ export default function ExportPage() {
                 left: project.composition.textPosition.x * previewScale,
                 top: project.composition.textPosition.y * previewScale,
                 maxWidth: width * 0.8 * previewScale,
+                ...(project.format.contrastMethod === "solid-block"
+                  ? { background: "rgba(0,0,0,0.7)", borderRadius: 8 * previewScale, padding: 16 * previewScale }
+                  : {}),
               }}
             >
               <p

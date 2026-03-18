@@ -1,8 +1,27 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
+
+async function imageUrlToBase64(url: string): Promise<{ base64: string; mediaType: string }> {
+  const res = await fetch(url)
+  const blob = await res.blob()
+  const buffer = await blob.arrayBuffer()
+  const base64 = btoa(
+    new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+  )
+  const mediaType = blob.type || "image/png"
+  return { base64, mediaType }
+}
+
+async function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
+  const buffer = await file.arrayBuffer()
+  const base64 = btoa(
+    new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+  )
+  return { base64, mediaType: file.type || "image/png" }
+}
 
 export default function UploadPage() {
   const project = useProject()
@@ -13,21 +32,58 @@ export default function UploadPage() {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [mode, setMode] = useState<"generate" | "upload">("generate")
+  const [describing, setDescribing] = useState(false)
+  const describeAbortRef = useRef<AbortController | null>(null)
 
   const selectedPrompt = project.imagePrompts.prompts.find(
     (p) => p.id === project.imagePrompts.selectedPromptId
   )
 
+  const describeImage = useCallback(
+    async (base64: string, mediaType: string) => {
+      describeAbortRef.current?.abort()
+      const controller = new AbortController()
+      describeAbortRef.current = controller
+
+      setDescribing(true)
+      try {
+        const res = await fetch("/api/describe-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64, mediaType }),
+          signal: controller.signal,
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.description) {
+          dispatch({
+            type: "SET_UPLOADED_IMAGE",
+            payload: { url: project.uploadedImage.url!, aiDescription: data.description },
+          })
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return
+        // Non-blocking — description is nice-to-have
+      } finally {
+        setDescribing(false)
+      }
+    },
+    [dispatch, project.uploadedImage.url]
+  )
+
   const handleFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       const url = URL.createObjectURL(file)
       dispatch({
         type: "SET_UPLOADED_IMAGE",
         payload: { url },
       })
       setGenError(null)
+
+      const { base64, mediaType } = await fileToBase64(file)
+      describeImage(base64, mediaType)
     },
-    [dispatch]
+    [dispatch, describeImage]
   )
 
   const handleDrop = useCallback(
@@ -71,6 +127,14 @@ export default function UploadPage() {
         type: "SET_UPLOADED_IMAGE",
         payload: { url: data.imageUrl },
       })
+
+      // Auto-describe the generated image (data URL already has base64)
+      const match = (data.imageUrl as string).match(
+        /^data:(image\/\w+);base64,(.+)$/
+      )
+      if (match) {
+        describeImage(match[2], match[1])
+      }
     } catch (err) {
       setGenError(
         err instanceof Error ? err.message : "Network error — try again"
@@ -211,6 +275,24 @@ export default function UploadPage() {
                 />
               </div>
             </div>
+            {/* Description status */}
+            {describing && (
+              <div className="flex items-center justify-center gap-2 text-sm text-zinc-400">
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent" />
+                Analyzing image for copywriter…
+              </div>
+            )}
+            {!describing && project.uploadedImage.aiDescription && (
+              <div className="mx-auto max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-3">
+                <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                  AI Description
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-300">
+                  {project.uploadedImage.aiDescription}
+                </p>
+              </div>
+            )}
+
             <div className="flex justify-center gap-3">
               <button
                 onClick={handleGenerate}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getAnthropicClient, MODEL } from "@/lib/anthropic"
 import { REFERENCE_ANALYSIS_SYSTEM_PROMPT } from "@/lib/prompts"
 import { ReferenceAnalysis } from "@/types/ad"
+import { extractJSON } from "@/lib/parse-json"
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
     const message = await client.messages.create({
       model: MODEL,
       max_tokens: 2048,
+      system: REFERENCE_ANALYSIS_SYSTEM_PROMPT,
       messages: [
         {
           role: "user",
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
             },
             {
               type: "text",
-              text: REFERENCE_ANALYSIS_SYSTEM_PROMPT,
+              text: "Analyze this reference ad image. Return your analysis as JSON.",
             },
           ],
         },
@@ -40,12 +42,7 @@ export async function POST(req: NextRequest) {
     })
 
     const text = message.content[0].type === "text" ? message.content[0].text : ""
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 })
-    }
-
-    const parsed: ReferenceAnalysis = { ...JSON.parse(jsonMatch[0]), imageId }
+    const parsed: ReferenceAnalysis = { ...extractJSON(text), imageId }
     return NextResponse.json(parsed)
   } catch (error) {
     console.error("Reference analysis error:", error)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getAnthropicClient, MODEL } from "@/lib/anthropic"
 import { IMAGE_PROMPT_SYSTEM_PROMPT, buildImagePromptUserPrompt } from "@/lib/prompts"
 import { ImagePromptRequest, ImagePromptResponse } from "@/types/ad"
+import { extractJSON } from "@/lib/parse-json"
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,12 +24,7 @@ export async function POST(req: NextRequest) {
     })
 
     const text = message.content[0].type === "text" ? message.content[0].text : ""
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 })
-    }
-
-    const parsed: ImagePromptResponse = JSON.parse(jsonMatch[0])
+    const parsed: ImagePromptResponse = extractJSON(text)
     return NextResponse.json(parsed)
   } catch (error) {
     console.error("Image prompt generation error:", error)

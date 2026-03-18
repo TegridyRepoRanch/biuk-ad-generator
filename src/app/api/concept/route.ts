@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getAnthropicClient, MODEL } from "@/lib/anthropic"
 import { CONCEPT_SYSTEM_PROMPT, buildConceptUserPrompt } from "@/lib/prompts"
 import { ConceptRequest, ConceptResponse } from "@/types/ad"
+import { extractJSON } from "@/lib/parse-json"
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,12 +25,7 @@ export async function POST(req: NextRequest) {
     })
 
     const text = message.content[0].type === "text" ? message.content[0].text : ""
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "Failed to parse AI response" }, { status: 500 })
-    }
-
-    const parsed: ConceptResponse = JSON.parse(jsonMatch[0])
+    const parsed: ConceptResponse = extractJSON(text)
     return NextResponse.json(parsed)
   } catch (error) {
     console.error("Concept generation error:", error)
