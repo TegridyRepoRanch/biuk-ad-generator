@@ -112,7 +112,7 @@ export default function UploadPage() {
     []
   )
 
-  // ── Generate 4 images in parallel ──────────────────────────────
+  // ── Generate 3 images in parallel ──────────────────────────────
   const generateAll = useCallback(async () => {
     if (!selectedPrompt) return
     setGenError(null)
@@ -121,16 +121,14 @@ export default function UploadPage() {
       { url: "", status: "loading" },
       { url: "", status: "loading" },
       { url: "", status: "loading" },
-      { url: "", status: "loading" },
     ])
 
-    // Fire all 4 in parallel with slight prompt variations
+    // Fire all 3 in parallel with slight prompt variations
     const basePrompt = selectedPrompt.text
     const variations = [
       basePrompt,
       basePrompt + " — variation with slightly different camera angle and lighting mood",
       basePrompt + " — variation with alternative color grading and atmosphere",
-      basePrompt + " — variation with different depth of field and subject placement",
     ]
 
     await Promise.allSettled(
@@ -248,8 +246,8 @@ export default function UploadPage() {
       <h1 className="text-2xl font-bold">Step 4: Generate Images</h1>
       <p className="mt-1 text-sm text-zinc-400">
         {images.length > 0
-          ? `${doneCount}/4 images generated. Pick your favorite.`
-          : "Generate 4 image variations from your prompt, or upload your own."}
+          ? `${doneCount}/3 images generated. Pick your favorite.`
+          : "Generate 3 image variations from your prompt, or upload your own."}
       </p>
 
       {/* Selected prompt reminder */}
@@ -272,7 +270,7 @@ export default function UploadPage() {
               : "border border-zinc-700 text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          AI Generate (4x)
+          AI Generate (3x)
         </button>
         <button
           onClick={() => setMode("upload")}
@@ -355,7 +353,7 @@ export default function UploadPage() {
                     disabled={isGenerating}
                     className="rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-40"
                   >
-                    {isGenerating ? `Generating (${doneCount}/4)…` : "Regenerate All (4x)"}
+                    {isGenerating ? `Generating (${doneCount}/3)…` : "Regenerate All (3x)"}
                   </button>
                 </div>
               </div>
@@ -367,7 +365,7 @@ export default function UploadPage() {
                   className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-700 py-16 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="text-zinc-300">
-                    Click to Generate 4 Image Variations
+                    Click to Generate 3 Image Variations
                   </span>
                 </button>
                 {genError && (
