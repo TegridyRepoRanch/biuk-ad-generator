@@ -66,7 +66,7 @@ export default function StepNav() {
       <div className="mx-auto flex max-w-5xl items-center gap-1">
         {steps.map((step, i) => {
           const isActive = pathname === step.path
-          const isCompleted = project.currentStep > step.number
+          const isCompleted = project.currentStep > step.number && isStepReady(step.number, project)
           const isAccessible = step.number <= project.currentStep
           const ready = isStepReady(step.number, project)
           const tooltip = getStepTooltip(step.number, project)
