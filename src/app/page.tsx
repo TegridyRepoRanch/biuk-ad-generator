@@ -58,7 +58,7 @@ export default function Home() {
       </div>
 
       <div className="mt-12 text-center text-xs text-zinc-600">
-        Powered by Claude + Nano Banana Pro
+        Powered by Gemini + Nano Banana Pro
       </div>
     </div>
   )

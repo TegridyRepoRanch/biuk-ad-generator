@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     try {
       aiAnalysis = extractJSON(analysisText)
     } catch {
-      // If Claude didn't return valid JSON, create a basic analysis
+      // If Gemini didn't return valid JSON, create a basic analysis
       aiAnalysis = {
         targetAudience: "General consumers",
         keySellingPoints: [extracted.name || "Product"],
@@ -178,7 +178,7 @@ async function scrapeProductPage(url: string): Promise<{ html: string; text: str
 
     const html = await res.text()
 
-    // Extract text content (strip HTML tags for Claude analysis)
+    // Extract text content (strip HTML tags for Gemini analysis)
     const text = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
@@ -372,7 +372,7 @@ function resolveUrl(url: string, base: string): string {
   }
 }
 
-// ── Claude prompts ────────────────────────────────────────────────
+// ── Gemini prompts ────────────────────────────────────────────────
 
 const PRODUCT_ANALYSIS_SYSTEM_PROMPT = `You are a senior advertising strategist analyzing a product page to prepare for ad creation. Your analysis drives the entire creative pipeline — generic output = generic ads.
 
