@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { CopyVariation } from "@/types/ad"
@@ -29,7 +29,7 @@ export default function ExportPage() {
   const hasBatch = project.batch.images.length === 2 && project.batch.copies.length === 2
 
   // Build the 4 combos (or just 1 for non-batch mode)
-  const combos: AdCombo[] = hasBatch
+  const combos: AdCombo[] = useMemo(() => hasBatch
     ? project.batch.images.flatMap((img, imgIdx) =>
         project.batch.copies.map((copy, copyIdx) => ({
           imageUrl: img.url,
@@ -48,6 +48,7 @@ export default function ExportPage() {
           label: "Ad",
         }]
       : []
+  , [hasBatch, project.batch.images, project.batch.copies, project.uploadedImage.url, project.copy.selected])
 
   // ── Core rendering function (renders one combo to a canvas) ──────
   const renderOneCombo = useCallback(async (
@@ -449,7 +450,7 @@ export default function ExportPage() {
           &larr; Back to Compose
         </button>
         <button
-          onClick={() => { dispatch({ type: "RESET" }); router.push("/") }}
+          onClick={() => { if (!confirm("Start a new ad? This will erase all current progress.")) return; dispatch({ type: "RESET" }); router.push("/") }}
           className="rounded-lg border border-zinc-700 px-5 py-2 text-sm text-zinc-300 transition-colors hover:bg-zinc-800"
         >
           Start New Ad

@@ -284,7 +284,7 @@ export default function UploadPage() {
           onClick={() => setMode("generate")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             mode === "generate"
-              ? "bg-white text-black"
+              ? "bg-[var(--accent)] text-white"
               : "border border-zinc-700 text-zinc-400 hover:text-zinc-200"
           }`}
         >
@@ -294,7 +294,7 @@ export default function UploadPage() {
           onClick={() => setMode("upload")}
           className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
             mode === "upload"
-              ? "bg-white text-black"
+              ? "bg-[var(--accent)] text-white"
               : "border border-zinc-700 text-zinc-400 hover:text-zinc-200"
           }`}
         >

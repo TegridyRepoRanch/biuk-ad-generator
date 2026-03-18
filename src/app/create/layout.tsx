@@ -32,6 +32,7 @@ function ResumeBanner() {
           </button>
           <button
             onClick={() => {
+              if (!confirm("Start fresh? This will erase all progress, images, and settings.")) return
               dispatch({ type: "RESET" })
               setDismissed(true)
             }}

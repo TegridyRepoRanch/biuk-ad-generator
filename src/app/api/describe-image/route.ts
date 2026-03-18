@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
     if (!image || typeof image !== "string") {
       return NextResponse.json({ error: "Base64 image data is required" }, { status: 400 })
     }
+    // Block oversized payloads (base64 ~= 1.33x raw size, so 7MB base64 ≈ 5MB image)
+    if (image.length > 7 * 1024 * 1024) {
+      return NextResponse.json({ error: "Image too large — must be under 5MB" }, { status: 413 })
+    }
 
     const description = await describeImageWithVision(
       GEMINI_FLASH,

@@ -9,6 +9,17 @@ export async function POST(req: NextRequest) {
   try {
     const body: ImagePromptRequest = await req.json()
 
+    // ── Input validation ───────────────────────────────────────
+    if (!body.concept || typeof body.concept.hook !== "string" || typeof body.concept.mechanism !== "string") {
+      return NextResponse.json({ error: "A concept with hook and mechanism is required" }, { status: 400 })
+    }
+    if (!body.platform || typeof body.platform !== "string") {
+      return NextResponse.json({ error: "A platform (string) is required" }, { status: 400 })
+    }
+    if (typeof body.width !== "number" || typeof body.height !== "number" || body.width <= 0 || body.height <= 0) {
+      return NextResponse.json({ error: "Valid width and height (positive numbers) are required" }, { status: 400 })
+    }
+
     // ── Check cache ──────────────────────────────────────────────
     const conceptHash = hashKey(body.concept.hook, body.concept.mechanism)
     const cacheKey = hashKey(

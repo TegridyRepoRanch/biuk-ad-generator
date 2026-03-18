@@ -9,6 +9,11 @@ export async function POST(req: NextRequest) {
   try {
     const body: ConceptRequest = await req.json()
 
+    // ── Input validation ───────────────────────────────────────
+    if (!body.brief || typeof body.brief !== "string") {
+      return NextResponse.json({ error: "A brief (string) is required" }, { status: 400 })
+    }
+
     // ── Check cache first ────────────────────────────────────────
     const briefHash = hashKey(body.brief, body.targetAudience, body.campaignGoal)
     const cacheKey = hashKey(

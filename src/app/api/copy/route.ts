@@ -9,6 +9,14 @@ export async function POST(req: NextRequest) {
   try {
     const body: CopyRequest = await req.json()
 
+    // ── Input validation ───────────────────────────────────────
+    if (!body.concept || typeof body.concept.hook !== "string" || typeof body.concept.mechanism !== "string") {
+      return NextResponse.json({ error: "A concept with hook and mechanism is required" }, { status: 400 })
+    }
+    if (!body.imageDescription || typeof body.imageDescription !== "string") {
+      return NextResponse.json({ error: "An imageDescription (string) is required" }, { status: 400 })
+    }
+
     // ── Check cache ──────────────────────────────────────────────
     const conceptHash = hashKey(body.concept.hook, body.concept.mechanism)
     const imageDescHash = hashKey(body.imageDescription.slice(0, 200))

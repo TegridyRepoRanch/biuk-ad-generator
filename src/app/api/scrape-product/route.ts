@@ -24,6 +24,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 })
     }
 
+    // ── SSRF protection: block internal/private network URLs ──────
+    const hostname = parsedUrl.hostname.toLowerCase()
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("172.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("169.254.") ||
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".local")
+    ) {
+      return NextResponse.json({ error: "Internal URLs are not allowed" }, { status: 400 })
+    }
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return NextResponse.json({ error: "Only http/https URLs are allowed" }, { status: 400 })
+    }
+
     const normalized = normalizeUrl(parsedUrl.href)
     const supabase = getSupabase()
 
@@ -531,7 +550,7 @@ async function generateCutoutAsync(imageUrl: string, productId: string) {
       .update({ cutout_image_url: data.publicUrl })
       .eq("id", productId)
 
-    console.log(`Auto-cutout generated and cached: ${data.publicUrl}`)
+    // Cutout generated and cached successfully
   } catch (err) {
     console.warn("Auto-cutout generation failed (non-blocking):", err)
   }

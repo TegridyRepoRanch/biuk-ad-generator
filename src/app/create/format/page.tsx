@@ -23,7 +23,7 @@ export default function FormatPage() {
   const { width, height, safeZones } = project.format
   const scale = Math.min(400 / width, 500 / height)
 
-  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(layoutTemplates[0]?.id ?? null)
 
   const applyTemplate = (template: LayoutTemplate) => {
     const zones = template.getZones(width, height, safeZones)

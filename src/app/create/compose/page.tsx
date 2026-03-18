@@ -329,7 +329,7 @@ export default function ComposePage() {
 
             {/* Safe Zones Indicator */}
             <div
-              className="pointer-events-none absolute border border-dashed border-red-500/20"
+              className="pointer-events-none absolute border border-dashed border-red-500/40 bg-red-500/5"
               style={{
                 top: project.format.safeZones.top * scale,
                 left: project.format.safeZones.left * scale,

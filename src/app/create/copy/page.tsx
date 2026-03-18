@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useProject, useDispatch } from "@/lib/store"
 import { getMessageZonePosition } from "@/lib/layout-templates"
 import { CopyVariation, CopyResponse } from "@/types/ad"
@@ -17,7 +17,6 @@ export default function CopyPage() {
   const project = useProject()
   const dispatch = useDispatch()
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { loading, error, elapsed, execute, clearError } = useApiCall()
   const [imageDescription, setImageDescription] = useState(
     project.uploadedImage.aiDescription || ""
@@ -111,11 +110,22 @@ export default function CopyPage() {
     }
   }, [imageDescription, selectedConcept, loading, project.copy.variations.length, generateCopy])
 
+  const isBatchMode = project.batch.images.length === 2
+
   const toggleCopy = (variation: CopyVariation) => {
-    dispatch({
-      type: "TOGGLE_BATCH_COPY",
-      payload: variation,
-    })
+    if (isBatchMode) {
+      dispatch({ type: "TOGGLE_BATCH_COPY", payload: variation })
+    } else {
+      // Single-image mode: just select/deselect this copy
+      const isAlreadySelected = project.copy.selected?.headline === variation.headline
+        && project.copy.selected?.cta === variation.cta
+      dispatch({
+        type: "SELECT_COPY",
+        payload: isAlreadySelected
+          ? null as unknown as { headline: string; subhead?: string; cta: string }
+          : { headline: variation.headline, subhead: variation.subhead, cta: variation.cta },
+      })
+    }
   }
 
   const proceed = () => {
@@ -129,7 +139,8 @@ export default function CopyPage() {
       <h1 className="text-2xl font-bold">Step 5: Headline Copy</h1>
       <p className="mt-1 text-sm text-zinc-400">
         AI analyzed your image automatically. Review the description below,
-        edit if needed, then generate headlines. Pick 2 for your 2x2 batch.
+        edit if needed, then generate headlines.{" "}
+        {isBatchMode ? "Pick 2 for your 2x2 batch." : "Pick your favorite."}
       </p>
 
       {/* Image Preview + Description */}
@@ -227,7 +238,10 @@ export default function CopyPage() {
             const hw = wordCount(variation.headline)
             const cw = wordCount(variation.cta)
             const batchIdx = project.batch.copies.findIndex((c) => c.id === variation.id)
-            const isSelected = batchIdx >= 0
+            const isSelected = isBatchMode
+              ? batchIdx >= 0
+              : project.copy.selected?.headline === variation.headline
+                && project.copy.selected?.cta === variation.cta
 
             return (
               <button
@@ -241,7 +255,7 @@ export default function CopyPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1">
-                    {isSelected && (
+                    {isSelected && isBatchMode && (
                       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
                         {batchIdx + 1}
                       </div>
@@ -279,7 +293,7 @@ export default function CopyPage() {
               </button>
             )
           })}
-          {project.batch.copies.length > 0 && project.batch.copies.length < 2 && (
+          {isBatchMode && project.batch.copies.length > 0 && project.batch.copies.length < 2 && (
             <p className="text-center text-sm text-amber-400">
               Pick 1 more headline for your 2x2 batch
             </p>
@@ -297,10 +311,12 @@ export default function CopyPage() {
         </button>
         <button
           onClick={proceed}
-          disabled={project.batch.copies.length < 2}
+          disabled={isBatchMode ? project.batch.copies.length < 2 : !project.copy.selected}
           className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Next: Compose ({project.batch.copies.length}/2 headlines) &rarr;
+          {isBatchMode
+            ? `Next: Compose (${project.batch.copies.length}/2 headlines) →`
+            : "Next: Compose →"}
         </button>
       </div>
     </div>

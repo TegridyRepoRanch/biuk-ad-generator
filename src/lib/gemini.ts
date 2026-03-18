@@ -36,6 +36,23 @@ export const NANO_BANANA = "gemini-2.5-flash-image"
 /** Active image model */
 export const IMAGE_MODEL = NANO_BANANA_PRO
 
+// ── Timeout helper ────────────────────────────────────────────────
+
+const DEFAULT_TIMEOUT_MS = 30_000 // 30 seconds
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`AI request timed out after ${ms / 1000}s. Please try again.`)),
+      ms
+    )
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v) },
+      (e) => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
+
 // ── Helper: text generation ───────────────────────────────────────
 
 /**
@@ -45,17 +62,21 @@ export const IMAGE_MODEL = NANO_BANANA_PRO
 export async function generateText(
   model: string,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<string> {
   const ai = getGeminiClient()
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-    config: {
-      systemInstruction: systemPrompt,
-    },
-  })
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      config: {
+        systemInstruction: systemPrompt,
+      },
+    }),
+    timeoutMs
+  )
 
   const text = response.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) {
@@ -73,25 +94,29 @@ export async function describeImageWithVision(
   base64: string,
   mediaType: string,
   systemPrompt: string,
-  userPrompt: string
+  userPrompt: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Promise<string> {
   const ai = getGeminiClient()
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { inlineData: { mimeType: mediaType, data: base64 } },
-          { text: userPrompt },
-        ],
+  const response = await withTimeout(
+    ai.models.generateContent({
+      model,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: mediaType, data: base64 } },
+            { text: userPrompt },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: systemPrompt,
       },
-    ],
-    config: {
-      systemInstruction: systemPrompt,
-    },
-  })
+    }),
+    timeoutMs
+  )
 
   const text = response.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) {
