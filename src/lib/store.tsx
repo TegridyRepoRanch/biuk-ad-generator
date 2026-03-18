@@ -145,7 +145,12 @@ function loadFromLocalStorage(): AdProject | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) as AdProject
+    const parsed = JSON.parse(raw)
+    // Merge defaults for fields added after initial release (migration)
+    if (!parsed.batch) {
+      parsed.batch = { images: [], copies: [] }
+    }
+    return parsed as AdProject
   } catch {
     return null
   }
