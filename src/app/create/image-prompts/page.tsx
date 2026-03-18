@@ -57,7 +57,7 @@ export default function ImagePromptsPage() {
         payload: data.prompts.map((p) => ({ ...p, isEdited: false })),
       })
     })
-  }, [selectedConcept, project.format, messageZonePosition, dispatch, execute])
+  }, [selectedConcept, project.format, project.brief.creativeResearch, messageZonePosition, dispatch, execute])
 
   const copyToClipboard = async (text: string, id: string) => {
     await navigator.clipboard.writeText(text)
