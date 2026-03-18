@@ -12,32 +12,90 @@ export function getGeminiClient() {
   return _client
 }
 
-/**
- * Nano Banana model family — API model identifiers
- *
- * IMPORTANT: The "Nano Banana" names are Google's marketing names.
- * The actual API model strings use the gemini-* naming convention.
- *
- * | Marketing Name       | API Model String                   | Based On           |
- * |----------------------|------------------------------------|--------------------|
- * | Nano Banana          | gemini-2.5-flash-image             | Gemini 2.5 Flash   |
- * | Nano Banana Pro      | gemini-3-pro-image-preview         | Gemini 3 Pro       |
- * | Nano Banana 2        | gemini-3.1-flash-image-preview     | Gemini 3.1 Flash   |
- *
- * Nano Banana Pro: Best quality, uses "Thinking" for complex instructions,
- *   high-fidelity text rendering. Slower, more expensive.
- * Nano Banana 2: Pro-level quality at Flash speed. Best default choice.
- * Nano Banana (original): Fastest, cheapest. Good for bulk/low-latency.
- *
- * All models use the same API pattern:
- *   ai.models.generateContent({ model, contents, config: { responseModalities: ["IMAGE", "TEXT"] } })
- * Response images are in: response.candidates[0].content.parts[].inlineData.data (base64)
- */
+// ── Text models ───────────────────────────────────────────────────
+// Used for all AI text generation (concept, copy, prompts, analysis, research)
 
-// Default to Nano Banana Pro for highest quality ad images
+/** Best quality. Use for concept generation, copy writing, product analysis. */
+export const GEMINI_PRO = "gemini-2.5-pro"
+
+/** Fast + cheap. Use for image description, reference analysis, image prompts. */
+export const GEMINI_FLASH = "gemini-2.5-flash"
+
+// ── Image models (Nano Banana family) ─────────────────────────────
+// "Nano Banana" is Google's marketing name. API strings use gemini-*.
+
+/** Best image quality, uses Thinking mode. Default for ad images. */
 export const NANO_BANANA_PRO = "gemini-3-pro-image-preview"
+
+/** Pro quality at Flash speed. Good fallback. */
 export const NANO_BANANA_2 = "gemini-3.1-flash-image-preview"
+
+/** Fastest, cheapest. Bulk generation. */
 export const NANO_BANANA = "gemini-2.5-flash-image"
 
-// Active model used for image generation in the app
+/** Active image model */
 export const IMAGE_MODEL = NANO_BANANA_PRO
+
+// ── Helper: text generation ───────────────────────────────────────
+
+/**
+ * Generate text content from Gemini. Replaces Claude's messages.create().
+ * Returns the text response as a string.
+ */
+export async function generateText(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string> {
+  const ai = getGeminiClient()
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+    config: {
+      systemInstruction: systemPrompt,
+    },
+  })
+
+  const text = response.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!text) {
+    throw new Error("AI returned an empty response")
+  }
+  return text
+}
+
+/**
+ * Describe an image using Gemini vision. Replaces Claude Vision.
+ * Accepts base64 image data and returns a text description.
+ */
+export async function describeImageWithVision(
+  model: string,
+  base64: string,
+  mediaType: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<string> {
+  const ai = getGeminiClient()
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: mediaType, data: base64 } },
+          { text: userPrompt },
+        ],
+      },
+    ],
+    config: {
+      systemInstruction: systemPrompt,
+    },
+  })
+
+  const text = response.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!text) {
+    throw new Error("AI returned an empty response")
+  }
+  return text
+}

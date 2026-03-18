@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSupabase, normalizeUrl } from "@/lib/supabase"
-import { getAnthropicClient, MODEL } from "@/lib/anthropic"
+import { GEMINI_PRO, generateText } from "@/lib/gemini"
 import { extractJSON } from "@/lib/parse-json"
 
 /**
  * POST /api/scrape-product
- * Takes a product URL, scrapes it, analyzes with Claude, caches in Supabase.
+ * Takes a product URL, scrapes it, analyzes with Gemini Pro, caches in Supabase.
  * Returns cached data if the URL has been seen before.
  */
 export async function POST(req: NextRequest) {
@@ -57,24 +57,14 @@ export async function POST(req: NextRequest) {
     // ── Extract product data + images from HTML ────────────────────
     const extracted = extractProductData(pageContent.html, parsedUrl.href)
 
-    // ── Run Claude analysis on the scraped content ─────────────────
-    const client = getAnthropicClient()
-
+    // ── Run Gemini analysis on the scraped content ─────────────────
     const analysisPrompt = buildAnalysisPrompt(
       pageContent.text,
       extracted,
       parsedUrl.href
     )
 
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2048,
-      system: PRODUCT_ANALYSIS_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: analysisPrompt }],
-    })
-
-    const firstBlock = message.content?.[0]
-    const analysisText = firstBlock && firstBlock.type === "text" ? firstBlock.text : ""
+    const analysisText = await generateText(GEMINI_PRO, PRODUCT_ANALYSIS_SYSTEM_PROMPT, analysisPrompt)
 
     let aiAnalysis = null
     try {
@@ -130,15 +120,7 @@ export async function POST(req: NextRequest) {
       aiAnalysis
     )
 
-    const researchMessage = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2048,
-      system: RESEARCH_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: researchPrompt }],
-    })
-
-    const researchBlock = researchMessage.content?.[0]
-    const researchText = researchBlock && researchBlock.type === "text" ? researchBlock.text : ""
+    const researchText = await generateText(GEMINI_PRO, RESEARCH_SYSTEM_PROMPT, researchPrompt)
 
     let researchData = null
     try {

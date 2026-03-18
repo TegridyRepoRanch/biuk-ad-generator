@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAnthropicClient, MODEL } from "@/lib/anthropic"
+import { GEMINI_FLASH, generateText } from "@/lib/gemini"
 import { IMAGE_PROMPT_SYSTEM_PROMPT, buildImagePromptUserPrompt } from "@/lib/prompts"
 import { ImagePromptRequest, ImagePromptResponse } from "@/types/ad"
 import { extractJSON } from "@/lib/parse-json"
@@ -27,7 +27,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Generate fresh prompts ───────────────────────────────────
-    const client = getAnthropicClient()
     const userPrompt = buildImagePromptUserPrompt(
       body.concept,
       body.messageZonePosition,
@@ -37,18 +36,7 @@ export async function POST(req: NextRequest) {
       body.visualDirection
     )
 
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2048,
-      system: IMAGE_PROMPT_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
-    })
-
-    const firstBlock = message.content?.[0]
-    const text = firstBlock && firstBlock.type === "text" ? firstBlock.text : ""
-    if (!text) {
-      return NextResponse.json({ error: "AI returned an empty response. Try again." }, { status: 502 })
-    }
+    const text = await generateText(GEMINI_FLASH, IMAGE_PROMPT_SYSTEM_PROMPT, userPrompt)
     const parsed: ImagePromptResponse = extractJSON(text)
 
     // ── Cache ────────────────────────────────────────────────────

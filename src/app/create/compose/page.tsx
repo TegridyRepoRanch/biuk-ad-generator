@@ -176,12 +176,9 @@ export default function ComposePage() {
               />
             )}
 
-            {/* Product Image Layer (draggable) */}
+            {/* Product Image Layer (draggable + rotatable) */}
             {productLayer?.visible && productLayer.url && (
-              <img
-                src={productLayer.url}
-                alt="Product"
-                draggable={false}
+              <div
                 onMouseDown={handleProductPointerDown}
                 onTouchStart={handleProductPointerDown}
                 className="absolute cursor-move touch-none"
@@ -189,11 +186,18 @@ export default function ComposePage() {
                   left: productLayer.position.x * scale,
                   top: productLayer.position.y * scale,
                   width: `${productLayer.scale * 30}%`,
-                  height: "auto",
+                  transform: `rotate(${productLayer.rotation || 0}deg)`,
+                  transformOrigin: "center center",
                   opacity: productLayer.opacity,
-                  objectFit: "contain",
                 }}
-              />
+              >
+                <img
+                  src={productLayer.url}
+                  alt="Product"
+                  draggable={false}
+                  className="h-auto w-full object-contain"
+                />
+              </div>
             )}
 
             {/* Safe Zones Indicator */}
@@ -553,6 +557,7 @@ export default function ComposePage() {
                             url: productImageUrl,
                             position: { x: width * 0.3, y: height * 0.3 },
                             scale: 1,
+                            rotation: 0,
                             opacity: 1,
                             visible: true,
                           },
@@ -605,6 +610,40 @@ export default function ComposePage() {
                         }
                         className="w-full"
                       />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-zinc-500">Rotation</label>
+                        {(productLayer.rotation || 0) !== 0 && (
+                          <button
+                            onClick={() =>
+                              dispatch({
+                                type: "UPDATE_PRODUCT_IMAGE",
+                                payload: { rotation: 0 },
+                              })
+                            }
+                            className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="range"
+                        min={-180}
+                        max={180}
+                        value={productLayer.rotation || 0}
+                        onChange={(e) =>
+                          dispatch({
+                            type: "UPDATE_PRODUCT_IMAGE",
+                            payload: { rotation: Number(e.target.value) },
+                          })
+                        }
+                        className="w-full"
+                      />
+                      <span className="text-xs text-zinc-500">
+                        {productLayer.rotation || 0}&deg;
+                      </span>
                     </div>
                     {project.brief.productCutoutUrl && project.brief.productHeroUrl ? (
                       <div className="flex gap-1">

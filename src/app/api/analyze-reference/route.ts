@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAnthropicClient, MODEL } from "@/lib/anthropic"
+import { GEMINI_FLASH, describeImageWithVision } from "@/lib/gemini"
 import { REFERENCE_ANALYSIS_SYSTEM_PROMPT } from "@/lib/prompts"
 import { ReferenceAnalysis } from "@/types/ad"
 import { extractJSON } from "@/lib/parse-json"
@@ -14,38 +14,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 })
     }
 
-    const client = getAnthropicClient()
     const bytes = await imageFile.arrayBuffer()
     const base64 = Buffer.from(bytes).toString("base64")
+    const mediaType = imageFile.type || "image/jpeg"
 
-    const mediaType = imageFile.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+    const text = await describeImageWithVision(
+      GEMINI_FLASH,
+      base64,
+      mediaType,
+      REFERENCE_ANALYSIS_SYSTEM_PROMPT,
+      "Analyze this reference ad image. Return your analysis as JSON."
+    )
 
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2048,
-      system: REFERENCE_ANALYSIS_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: base64 },
-            },
-            {
-              type: "text",
-              text: "Analyze this reference ad image. Return your analysis as JSON.",
-            },
-          ],
-        },
-      ],
-    })
-
-    const firstBlock = message.content?.[0]
-    const text = firstBlock && firstBlock.type === "text" ? firstBlock.text : ""
-    if (!text) {
-      return NextResponse.json({ error: "AI returned an empty response. Try again." }, { status: 502 })
-    }
     const parsed: ReferenceAnalysis = { ...extractJSON(text), imageId }
     return NextResponse.json(parsed)
   } catch (error) {

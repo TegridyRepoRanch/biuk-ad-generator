@@ -77,7 +77,7 @@ export default function ExportPage() {
       ctx.fillRect(0, 0, width, height)
     }
 
-    // Draw product image layer
+    // Draw product image layer (with rotation)
     const pl = project.composition.productImage
     if (pl?.visible && pl.url) {
       const prodImg = new Image()
@@ -86,10 +86,17 @@ export default function ExportPage() {
         prodImg.onload = () => {
           ctx.save()
           ctx.globalAlpha = pl.opacity
-          // Scale: 1.0 = 30% of canvas width (matches compose preview)
           const drawWidth = width * 0.3 * pl.scale
           const drawHeight = (prodImg.height / prodImg.width) * drawWidth
-          ctx.drawImage(prodImg, pl.position.x, pl.position.y, drawWidth, drawHeight)
+          const cx = pl.position.x + drawWidth / 2
+          const cy = pl.position.y + drawHeight / 2
+          if (pl.rotation) {
+            ctx.translate(cx, cy)
+            ctx.rotate((pl.rotation * Math.PI) / 180)
+            ctx.drawImage(prodImg, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+          } else {
+            ctx.drawImage(prodImg, pl.position.x, pl.position.y, drawWidth, drawHeight)
+          }
           ctx.restore()
           resolve()
         }
@@ -314,19 +321,23 @@ export default function ExportPage() {
           )}
           {/* Product image layer */}
           {project.composition.productImage?.visible && project.composition.productImage.url && (
-            <img
-              src={project.composition.productImage.url}
-              alt="Product"
+            <div
               className="absolute"
               style={{
                 left: project.composition.productImage.position.x * previewScale,
                 top: project.composition.productImage.position.y * previewScale,
                 width: `${project.composition.productImage.scale * 30}%`,
-                height: "auto",
+                transform: `rotate(${project.composition.productImage.rotation || 0}deg)`,
+                transformOrigin: "center center",
                 opacity: project.composition.productImage.opacity,
-                objectFit: "contain",
               }}
-            />
+            >
+              <img
+                src={project.composition.productImage.url}
+                alt="Product"
+                className="h-auto w-full object-contain"
+              />
+            </div>
           )}
           {project.copy.selected && (
             <div
@@ -426,6 +437,80 @@ export default function ExportPage() {
           </p>
         )}
       </div>
+
+      {/* ── 2x2 Ad Batch Builder ────────────────────────────────────── */}
+      {downloadUrl && project.copy.variations.length > 1 && (
+        <div className="mt-10 rounded-lg border border-zinc-800 bg-zinc-900/50 p-6">
+          <h2 className="text-lg font-semibold">Build Your 2x2 Batch</h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            Every ad batch needs 2 headlines x 2 images = 4 ads. Swap the
+            headline below to create your next variation, then re-render.
+          </p>
+
+          {/* Headline variations */}
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-medium uppercase text-zinc-500">
+              Swap Headline
+            </p>
+            {project.copy.variations.map((v) => {
+              const isActive = project.copy.selected?.headline === v.headline
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    if (!isActive) {
+                      dispatch({
+                        type: "SELECT_COPY",
+                        payload: {
+                          headline: v.headline,
+                          subhead: v.subhead,
+                          cta: v.cta,
+                        },
+                      })
+                      // Clear previous render so they know to re-render
+                      setDownloadUrl(null)
+                      hasRendered.current = false
+                    }
+                  }}
+                  className={`w-full rounded-lg border px-4 py-3 text-left transition-colors ${
+                    isActive
+                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-white"
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">{v.headline}</span>
+                  <span className="ml-2 text-xs text-zinc-500">{v.cta}</span>
+                  {isActive && (
+                    <span className="ml-2 text-xs text-[var(--accent)]">current</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Quick actions for the 2x2 */}
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => {
+                dispatch({ type: "SET_STEP", payload: 4 })
+                router.push("/create/upload")
+              }}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              Generate New Image
+            </button>
+            <button
+              onClick={() => {
+                dispatch({ type: "SET_STEP", payload: 6 })
+                router.push("/create/compose")
+              }}
+              className="rounded-lg border border-zinc-700 px-4 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              Adjust Composition
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Navigation */}
       <div className="mt-10 flex justify-between">

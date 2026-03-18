@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAnthropicClient, MODEL } from "@/lib/anthropic"
+import { GEMINI_PRO, generateText } from "@/lib/gemini"
 import { COPY_SYSTEM_PROMPT, buildCopyUserPrompt } from "@/lib/prompts"
 import { CopyRequest, CopyResponse } from "@/types/ad"
 import { extractJSON } from "@/lib/parse-json"
@@ -28,7 +28,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Generate fresh copy ──────────────────────────────────────
-    const client = getAnthropicClient()
     const userPrompt = buildCopyUserPrompt(
       body.concept,
       body.imageDescription,
@@ -41,18 +40,7 @@ export async function POST(req: NextRequest) {
       body.productAnalysis
     )
 
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: COPY_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
-    })
-
-    const firstBlock = message.content?.[0]
-    const text = firstBlock && firstBlock.type === "text" ? firstBlock.text : ""
-    if (!text) {
-      return NextResponse.json({ error: "AI returned an empty response. Try again." }, { status: 502 })
-    }
+    const text = await generateText(GEMINI_PRO, COPY_SYSTEM_PROMPT, userPrompt)
     const parsed: CopyResponse = extractJSON(text)
 
     // ── Cache ────────────────────────────────────────────────────
