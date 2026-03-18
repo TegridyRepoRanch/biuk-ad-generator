@@ -27,7 +27,7 @@ export default function ImagePromptsPage() {
     project.format.height
   )
 
-  const generatePrompts = useCallback(async () => {
+  const generatePrompts = useCallback(async (skipCache = false) => {
     if (!selectedConcept) return
     await execute(async () => {
       const res = await fetch("/api/image-prompts", {
@@ -42,6 +42,7 @@ export default function ImagePromptsPage() {
           messageZonePosition,
           contrastMethod: project.format.contrastMethod,
           visualDirection: project.brief.creativeResearch?.visualDirection,
+          skipCache,
         }),
       })
       if (!res.ok) {
@@ -110,13 +111,13 @@ export default function ImagePromptsPage() {
 
       <div className="mt-6">
         <button
-          onClick={generatePrompts}
+          onClick={() => generatePrompts(true)}
           disabled={loading || !selectedConcept}
           className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           Generate Image Prompts
         </button>
-        {error && <ErrorBanner error={error} onRetry={generatePrompts} onDismiss={clearError} />}
+        {error && <ErrorBanner error={error} onRetry={() => generatePrompts(true)} onDismiss={clearError} />}
       </div>
 
       {project.imagePrompts.prompts.length > 0 && (
@@ -124,7 +125,7 @@ export default function ImagePromptsPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Image Prompts</h2>
             <button
-              onClick={generatePrompts}
+              onClick={() => generatePrompts(true)}
               disabled={loading}
               className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
             >

@@ -130,7 +130,7 @@ export default function ConceptPage() {
   }, [productUrl, executeScrape, dispatch])
 
   // ── Generate concepts ────────────────────────────────────────────
-  const generateConcepts = useCallback(async () => {
+  const generateConcepts = useCallback(async (skipCache = false) => {
     await executeGen(async () => {
       const res = await fetch("/api/concept", {
         method: "POST",
@@ -143,6 +143,7 @@ export default function ConceptPage() {
           brandVoice: project.brief.brandVoice,
           productAnalysis: project.brief.productAnalysis,
           creativeResearch: project.brief.creativeResearch,
+          skipCache,
         }),
       })
       if (!res.ok) {
@@ -437,7 +438,7 @@ export default function ConceptPage() {
       {(product || showManualBrief) && (
         <div className="mt-8">
           <button
-            onClick={generateConcepts}
+            onClick={() => generateConcepts(true)}
             disabled={!canGenerate || generating}
             className="rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -453,7 +454,7 @@ export default function ConceptPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Pick a Concept Angle</h2>
             <button
-              onClick={generateConcepts}
+              onClick={() => generateConcepts(true)}
               disabled={generating}
               className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
             >

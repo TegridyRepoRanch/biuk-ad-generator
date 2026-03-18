@@ -49,7 +49,7 @@ export default function CopyPage() {
     project.format.height
   )
 
-  const generateCopy = useCallback(async () => {
+  const generateCopy = useCallback(async (skipCache = false) => {
     if (!selectedConcept) return
     if (!imageDescription) {
       return
@@ -69,6 +69,7 @@ export default function CopyPage() {
           brandVoice: project.brief.brandVoice,
           copyDirection: project.brief.creativeResearch?.copyDirection,
           productAnalysis: project.brief.productAnalysis,
+          skipCache,
         }),
       })
       if (!res.ok) {
