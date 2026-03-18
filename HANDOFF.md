@@ -1,4 +1,4 @@
-# Ad Creator — Session Handoff (March 18, 2026)
+# Ad Creator — Session Handoff (March 18, 2026, End of Day)
 
 ## What This Is
 
@@ -6,24 +6,57 @@ A web app that turns any product URL into finished social media ad images.
 Built by Austin (BIUK Creative). Lives at **ad-creator-orpin.vercel.app**.
 Repo: **TegridyRepoRanch/ad-creator** (auto-deploys to Vercel on push to main).
 
-## Current State: FUNCTIONAL, ACTIVELY TESTING
+## Current State: FUNCTIONAL, 2x2 BATCH FLOW IMPLEMENTED
 
-The app works end-to-end. Austin is testing the full pipeline and giving
-feedback on UX. The core flow is:
+The app works end-to-end. The pipeline now supports a full 2x2 batch workflow
+(2 images × 2 headlines = 4 ads). An audit was completed and most quick-win
+fixes have been applied. Austin is actively testing.
+
+### The 7-Step Pipeline
 
 1. Paste product URL → auto-scrape → AI analysis → AI research → cache in Supabase
 2. Auto-generate 3 concept angles → user picks one
 3. Pick platform + layout template + contrast method
-4. Auto-generate ranked image prompts → user selects one → auto-generates 3 images
-5. User picks an image → auto-describe → auto-generate headlines
-6. User picks headline → compose with drag, font picker, product image layer
-7. Auto-render PNG → download
+4. Auto-generate ranked image prompts → user selects one → auto-generates 3 images → **pick 2 for batch**
+5. Auto-describe image → auto-generate 3 headlines → **pick 2 for batch**
+6. Compose one ad (drag text, font, overlay, product image) → edits mirror to all 4 combos (2x2 preview grid)
+7. Auto-render all 4 PNGs → download individually or as 2x2 grid
+
+### What Changed This Session (Post-Compaction)
+
+**2x2 Batch Builder:**
+- Step 4: multi-select 2 of 3 generated images (numbered badges, 3-col grid)
+- Step 5: multi-select 2 of 3 headlines
+- Compose: 2x2 mini-preview grid below main editor showing all 4 combos
+- Export: renders all 4 combos, "Download 2x2 Grid" stitches into single image
+- New state: `batch.images[]` (max 2) and `batch.copies[]` (max 2) in store
+- IndexedDB persistence for batch images, localStorage strips data URLs with `__IDB_BATCH__` markers
+
+**Guided Regeneration:**
+- "Not quite right?" button on Regenerate for concepts (Step 1), image prompts (Step 3), and copy (Step 5)
+- Optional text field where user describes what didn't work
+- Feedback injected into AI prompt as anti-direction, auto-bypasses cache
+- Works across all 3 generation routes
+
+**Audit Fixes Applied (by Antigravity Claude Code):**
+- #3: `confirm()` dialog before "Start Fresh" / RESET
+- #4: Upload mode toggle uses accent color (was white)
+- #5: Removed `console.log` from scrape route
+- #6: Removed unused `useSearchParams` import from copy page
+- #7: Memoized `combos` array in export page
+- #8: Safe zone border visibility increased (`/20` → `/40` + `bg-red-500/5`)
+- #9: Default-select first layout template in Step 2
+- #11: Input validation on concept, image-prompt, and copy API routes
+- #12: Fixed single-image mode — copy page now detects batch vs single mode, allows 1 headline in single mode
+
+**Bug Fixes:**
+- `batch` property missing from old localStorage → added migration in `loadFromLocalStorage()`
+- StepNav showing false checkmarks → now requires both `currentStep > step` AND `isStepReady()`
 
 ## Architecture (Single API Key)
 
 **CRITICAL: The entire app runs on ONE API key — GEMINI_API_KEY.**
-There is NO Anthropic/Claude dependency. The `@anthropic-ai/sdk` was removed.
-`src/lib/anthropic.ts` was deleted. All text AI uses Gemini.
+No Anthropic/Claude dependency. `@anthropic-ai/sdk` was removed.
 
 | Call | Model | Purpose |
 |---|---|---|
@@ -37,9 +70,12 @@ There is NO Anthropic/Claude dependency. The `@anthropic-ai/sdk` was removed.
 | Background removal | `gemini-3.1-flash-image-preview` | Nano Banana 2 for product cutouts |
 | Reference analysis | `gemini-2.5-flash` | Analyze uploaded reference ads |
 
-Model constants are in `src/lib/gemini.ts`. Helper functions:
-- `generateText(model, systemPrompt, userPrompt)` — replaces Claude messages.create()
-- `describeImageWithVision(model, base64, mediaType, systemPrompt, userPrompt)` — replaces Claude Vision
+Model constants in `src/lib/gemini.ts`. Helpers:
+- `generateText(model, systemPrompt, userPrompt)` — all text generation
+- `describeImageWithVision(model, base64, mediaType, systemPrompt, userPrompt)` — vision
+
+All 3 generation routes accept `feedback?: string` and `skipCache?: boolean`.
+When feedback is present, cache is always bypassed.
 
 ## Supabase
 
@@ -53,9 +89,7 @@ Tables:
 - `copy_cache` — cached copy variations, keyed by concept+image-desc hash
 - `product-images` storage bucket — product cutout PNGs
 
-Cache helper: `src/lib/cache.ts` with `hashKey()`, `getCached*()`, `setCached*()`.
-All 3 generation routes (concept, image-prompts, copy) check cache first.
-`skipCache: true` in the request body bypasses cache (used by Regenerate buttons).
+Cache helper: `src/lib/cache.ts` with `hashKey()` (djb2), `getCached*()`, `setCached*()`.
 
 ## Vercel Environment Variables
 
@@ -66,68 +100,70 @@ All 3 generation routes (concept, image-prompts, copy) check cache first.
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ |
 | `ANTHROPIC_API_KEY` | ✅ (legacy, unused — can remove) |
 
-## Key Files Modified This Session
+## Key Files
 
-- `src/lib/gemini.ts` — ALL AI models + text/vision helpers
-- `src/lib/anthropic.ts` — DELETED
-- `src/lib/cache.ts` — NEW, Supabase caching layer
-- `src/lib/parse-json.ts` — balanced-brace JSON parser (not greedy regex)
-- `src/lib/supabase.ts` — untyped client (`<any>` generics, no generated types)
-- `src/lib/store.tsx` — localStorage + IndexedDB persistence, undo/redo, product data actions
-- `src/app/api/scrape-product/route.ts` — product scrape + analysis + research + auto-cutout
-- `src/app/api/remove-background/route.ts` — on-demand cutout via Nano Banana 2
-- `src/app/api/concept/route.ts` — Gemini Pro + caching
-- `src/app/api/image-prompts/route.ts` — Gemini Flash + caching + ranked output
-- `src/app/api/copy/route.ts` — Gemini Pro + caching + contrastMethod + copyDirection
-- `src/app/api/describe-image/route.ts` — Gemini Flash vision
-- `src/app/api/analyze-reference/route.ts` — Gemini Flash vision
-- `src/app/create/page.tsx` — NEW Step 1 with URL input, session gating, auto-chain
-- `src/app/create/image-prompts/page.tsx` — auto-fire, ranked prompts, "Select & Generate"
-- `src/app/create/upload/page.tsx` — 3 parallel image gen, selection grid, auto-describe, auto-advance
-- `src/app/create/copy/page.tsx` — auto-fire copy generation
-- `src/app/create/compose/page.tsx` — product image layer, inline text editing, touch drag
-- `src/app/create/export/page.tsx` — auto-render, 2x2 batch builder, product image in canvas
+### Core Libraries
+- `src/lib/gemini.ts` — ALL AI model constants + text/vision helpers
+- `src/lib/cache.ts` — Supabase caching layer (djb2 hash keys)
+- `src/lib/parse-json.ts` — balanced-brace JSON parser
+- `src/lib/supabase.ts` — untyped client (`<any>` generics)
+- `src/lib/store.tsx` — state management: useReducer + localStorage + IndexedDB, undo/redo, batch actions
+- `src/lib/prompts.ts` — ALL system prompts and user prompt builders (concept, image, copy) with feedback injection
+- `src/lib/platforms.ts` — platform specs (dimensions, safe zones)
+- `src/lib/layout-templates.ts` — layout templates + message zone position helper
+- `src/lib/image-store.ts` — IndexedDB wrapper for large image storage
+- `src/lib/preview-scale.ts` — canvas preview scaling helper
 
-## Auto-Chain Flow
+### API Routes (all in `src/app/api/`)
+- `scrape-product/route.ts` — scrape URL → extract data → Gemini Pro analysis + research → Supabase cache → async cutout
+- `concept/route.ts` — Gemini Pro + cache + input validation + feedback
+- `image-prompts/route.ts` — Gemini Flash + cache + validation + feedback + ranked output
+- `copy/route.ts` — Gemini Pro + cache + validation + feedback + contrastMethod
+- `generate-image/route.ts` — Nano Banana Pro image generation
+- `describe-image/route.ts` — Gemini Flash vision
+- `remove-background/route.ts` — Nano Banana 2 + SSRF protection + Supabase Storage
+- `analyze-reference/route.ts` — Gemini Flash vision for reference ads
 
-The pipeline auto-chains so the user doesn't click unnecessary buttons:
-1. Analyze URL → auto-fire concept generation
-2. Select concept → manual (user picks) → Next to format
-3. Format → Next → auto-fire image prompt generation
-4. Select prompt → auto-navigate to Step 4 + auto-generate 3 images
-5. Select image → auto-describe → auto-advance to Step 5 → auto-fire copy
-6. Select headline → Next to compose (manual)
-7. Compose → Next to export → auto-render PNG
+### Step Pages (all in `src/app/create/`)
+- `page.tsx` — Step 1: URL input → scrape → product card → research → brief → concepts → feedback regen
+- `format/page.tsx` — Step 2: platform picker, layout templates, contrast method
+- `image-prompts/page.tsx` — Step 3: ranked prompts, edit, "Select & Generate", feedback regen
+- `upload/page.tsx` — Step 4: 3-col image grid, multi-select 2, upload mode, auto-describe
+- `copy/page.tsx` — Step 5: headlines, batch mode (pick 2) vs single mode (pick 1), feedback regen
+- `compose/page.tsx` — Step 6: drag text, font picker, product image layer, gradient, 2x2 batch preview
+- `export/page.tsx` — Step 7: render all combos, 2x2 grid download, individual downloads
 
-## What Austin Asked For That Isn't Done Yet
+### State Model (AdProject in `src/types/ad.ts`)
+Key additions this session:
+- `batch.images: Array<{ url, aiDescription? }>` — max 2 selected images
+- `batch.copies: CopyVariation[]` — max 2 selected headlines
+- `brief.productId?: string` — Supabase products row ID
+- All request types have `feedback?: string`
 
-1. **Compose step text editor** — Austin wants the compose step to be a free-form
-   text editor instead of locked headline/subhead/CTA blocks. He should be able to
-   delete the subhead, remove the CTA, add extra lines, type whatever he wants.
-   Currently the compose step has inline editing (double-click) but the structure
-   is still locked to headline + optional subhead + CTA.
+### Store Actions Added
+- `TOGGLE_BATCH_IMAGE` — toggle image in/out of batch (max 2), auto-sets `uploadedImage` to first
+- `TOGGLE_BATCH_COPY` — toggle headline in/out of batch (max 2), auto-sets `copy.selected` to first
+- `CLEAR_BATCH_IMAGES` / `CLEAR_BATCH_COPIES` — reset batch on regenerate
 
-2. **Headline copy marketing theory** — Austin mentioned he has headline copy
-   marketing theory info to paste for backend logic. This hasn't been provided yet.
-   When he gives it, it should be integrated into `COPY_SYSTEM_PROMPT` in
-   `src/lib/prompts.ts`.
+## What's NOT Done Yet (from audit)
 
-## Known Issues / Limitations
+### Remaining Audit Items (ranked by importance)
+1. **#2 SSRF on scrape route** — scrape-product fetches any URL with no IP blocking (remove-background has it, scraper doesn't)
+2. **#13 Gemini API timeouts** — no AbortSignal, hangs = 60s wait
+3. **#10 Batch image rehydration test** — code exists but may have edge cases on refresh
+4. **#14 Rate limiting** — no rate limiting on any route
+5. **#15 Export CORS error feedback** — external images fail silently on canvas
+6. **#16 Double reducer call** — TOGGLE_BATCH_IMAGE dispatch calls reducer() manually for IndexedDB save
+7. **#17 djb2 hash collisions** — 32-bit, fine at Austin's scale
+8. **#18 Compose decomposition** — 911 LOC, works but messy
+9. **#19 Images to Supabase Storage** — data URLs in memory, mobile risk
+10. **#20 Sentry** — no error monitoring
+11. **#21 Tests** — zero test coverage
+12. **#22 Image proxy for CORS** — external CDN images may fail in canvas export
 
-- **Fire-and-forget cutout** — `generateCutoutAsync()` in scrape-product runs after
-  the response is sent. On Vercel serverless, this may get killed. The frontend
-  polls for it (every 5s, 12 attempts) and there's a manual "Remove Background"
-  button in compose as fallback.
-
-- **No rate limiting** — API routes have no rate limiting. Add Upstash Redis
-  when ready for production traffic.
-
-- **No error monitoring** — No Sentry. Errors go to Vercel function logs only.
-
-- **No CI/CD** — No GitHub Actions. Breaking changes can deploy directly.
-
-- **Google Fonts loaded via stylesheet link** — render-blocking. Should migrate
-  to `next/font/google` for self-hosting.
+### Feature Requests Not Yet Built
+1. **Compose free-form text editor** — Austin wants to delete subhead, remove CTA, type freely (currently locked structure)
+2. **Headline copy marketing theory** — Austin has marketing theory to paste, integrate into COPY_SYSTEM_PROMPT
 
 ## Austin's Workflow Preferences
 
@@ -136,26 +172,16 @@ The pipeline auto-chains so the user doesn't click unnecessary buttons:
 - Wants things to just work — bias toward action over asking questions.
 - Has 6 products he makes tons of ads for — caching is critical.
 - Runs BIUK Creative agency. The tool is for his own ad production workflow.
-- Uses Google Antigravity IDE with Claude Code (called "Antigravity") for
-  parallel development. Two agents there: Claude Code (implementation) and
-  Claude Opus (architecture/prompts). Give them self-contained prompts.
+- Uses Google Antigravity IDE with Claude Code for parallel development. Give Antigravity agents self-contained prompts.
+- When asking "what does this do" he wants plain English, not engineering jargon.
 
-## Commit History (This Session)
+## How to Push Code
 
-1. Initial scaffold push
-2. Gemini image gen (Nano Banana Pro) + upload fallback
-3. Favicon fix (corrupted .ico → SVG)
-4. Nano Banana model documentation
-5. Audit fixes P2-P6 (solid-block, system prompt, JSON parsing, error boundary, cleanup)
-6. Quick wins (#9 template state, #14 auto-render, #15 validation, #25 singleton, #2 blob URLs)
-7. Deep sweep fixes (contrastMethod in copy prompts, imageId validation)
-8. Opus audit fixes (Gemini singleton, balanced-brace JSON parser, stale closure)
-9. Security fix (SSRF protection on remove-background, data URL regex)
-10. New Step 1 (product URL → scrape → AI analysis → Supabase caching)
-11. TS fix (untyped Supabase client)
-12. Cost reduction (Haiku + Supabase caching on concepts/prompts/copy)
-13. **GEMINI MIGRATION** — replaced ALL Claude calls with Gemini, removed @anthropic-ai/sdk
-14. Model ID fix (claude-sonnet-4-6-20250514 → claude-sonnet-4-6, then → Gemini entirely)
-15. Antigravity sync (auto-chains, session gating, cutout pipeline, inline editing, batch builder)
-16. 3x parallel image gen (down from 4 to avoid rate limits)
-17. Stale Claude reference cleanup
+The local repo at `/ad-creator` is NOT connected to a git remote.
+Use the Cowork `deploy_github_push_files` tool to push:
+```
+repo: TegridyRepoRanch/ad-creator
+directory: [path to ad-creator]
+```
+This pushes all files and triggers Vercel auto-deploy.
+Antigravity Claude Code cannot push — only Cowork can.
