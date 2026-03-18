@@ -12,4 +12,4 @@ export function getAnthropicClient() {
   return _client
 }
 
-export const MODEL = "claude-sonnet-4-6-20250514"
+export const MODEL = "claude-sonnet-4-6"
