@@ -1,0 +1,21 @@
+name: Sync to Fork
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync fork instantly
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.FORK_SYNC_TOKEN }}
+          script: |
+            const result = await github.request("POST /repos/{owner}/{repo}/merge-upstream", {
+              owner: "HighestTegridyRepos",
+              repo: context.repo.repo,
+              branch: "main"
+            });
+            console.log(result.data.message);
+
