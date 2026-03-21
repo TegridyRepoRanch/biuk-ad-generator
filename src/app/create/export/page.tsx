@@ -301,6 +301,41 @@ export default function ExportPage() {
       ctx.fillText(combo.cta, ctaX + ctaWidth / 2, ty + ctaHeight / 2)
     }
 
+    // Draw custom text elements
+    for (const customText of project.composition.customTexts) {
+      const customFontSize = customText.fontSize * sf
+      ctx.font = `${customText.fontWeight} ${customFontSize}px ${customText.fontFamily}`
+      ctx.fillStyle = customText.color
+      ctx.textAlign = customText.align
+      ctx.textBaseline = "top"
+
+      if (project.format.contrastMethod === "text-shadow") {
+        ctx.shadowColor = "rgba(0,0,0,0.6)"
+        ctx.shadowBlur = 8 * sf
+        ctx.shadowOffsetY = 2 * sf
+      } else {
+        ctx.shadowColor = "transparent"
+      }
+
+      const useOutlineCustom = project.format.contrastMethod === "outlined-text"
+      if (useOutlineCustom) {
+        ctx.strokeStyle = "rgba(0,0,0,0.5)"
+        ctx.lineWidth = 3 * sf
+      }
+
+      const customTx = customText.position.x * sf
+      const customTy = customText.position.y * sf
+
+      if (useOutlineCustom) {
+        ctx.strokeText(customText.text, customTx, customTy)
+      }
+      ctx.fillText(customText.text, customTx, customTy)
+    }
+
+    ctx.shadowColor = "transparent"
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetY = 0
+
     return canvas.toDataURL("image/png", 1.0)
   }, [project, width, height])
 

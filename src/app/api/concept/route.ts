@@ -7,12 +7,19 @@ import { hashKey, getCachedConcepts, setCachedConcepts } from "@/lib/cache"
 import { rateLimit } from "@/lib/rate-limit"
 import { errorResponse } from "@/lib/api-error"
 import { MAX_BRIEF_LENGTH } from "@/lib/constants"
+import { logInfo, logWarn, logRequest } from "@/lib/logger"
+
+const ROUTE_NAME = "concept"
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now()
+  logInfo(ROUTE_NAME, "Request received")
+
   try {
     // Rate limit: 20 req/min
-    const { allowed } = rateLimit("concept", 20, 60_000)
+    const { allowed } = rateLimit(ROUTE_NAME, 20, 60_000)
     if (!allowed) {
+      logWarn(ROUTE_NAME, "Rate limit exceeded")
       return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 })
     }
 
@@ -59,9 +66,10 @@ export async function POST(req: NextRequest) {
     // ── Cache the result ─────────────────────────────────────────
     await setCachedConcepts(cacheKey, briefHash, parsed.angles).catch(console.warn)
 
+    logRequest(ROUTE_NAME, "POST", Date.now() - startTime)
     return NextResponse.json(parsed)
   } catch (error) {
     console.error("Concept generation error:", error)
-    return errorResponse(error)
+    return errorResponse(error, ROUTE_NAME)
   }
 }

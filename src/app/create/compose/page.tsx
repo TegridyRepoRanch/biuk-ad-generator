@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { v4 as uuid } from "uuid"
 import { useProject, useDispatch, useUndo } from "@/lib/store"
 import { getPreviewScale } from "@/lib/preview-scale"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
@@ -12,6 +13,7 @@ import BatchPreviewGrid from "./BatchPreviewGrid"
 import TransformBox from "@/components/TransformBox"
 
 type EditingField = "headline" | "subhead" | "cta" | null
+type EditingCustomText = { id: string } | null
 
 export default function ComposePage() {
   const project = useProject()
@@ -26,6 +28,7 @@ export default function ComposePage() {
   const scale = zoomLevel ?? autoScale
 
   const [editing, setEditing] = useState<EditingField>(null)
+  const [editingCustomText, setEditingCustomText] = useState<EditingCustomText>(null)
   const [selectedElement, setSelectedElement] = useState<"text" | "product" | null>("text")
   const editRef = useRef<HTMLDivElement>(null)
   const [guides, setGuides] = useState<GuideLine[]>([])
@@ -90,11 +93,33 @@ export default function ComposePage() {
   // ── Inline editing ─────────────────────────────────────────────
   const startEditing = (field: EditingField) => {
     setEditing(field)
+    setEditingCustomText(null)
+    setSelectedElement("text")
+    setTimeout(() => editRef.current?.focus(), 0)
+  }
+
+  const startEditingCustomText = (id: string) => {
+    setEditingCustomText({ id })
+    setEditing(null)
     setSelectedElement("text")
     setTimeout(() => editRef.current?.focus(), 0)
   }
 
   const finishEditing = useCallback(() => {
+    if (editingCustomText) {
+      if (!editRef.current) {
+        setEditingCustomText(null)
+        return
+      }
+      const newText = editRef.current.innerText
+      dispatch({
+        type: "UPDATE_CUSTOM_TEXT",
+        payload: { id: editingCustomText.id, updates: { text: newText } },
+      })
+      setEditingCustomText(null)
+      return
+    }
+
     if (!editing || !editRef.current) {
       setEditing(null)
       return
@@ -112,11 +137,11 @@ export default function ComposePage() {
 
     dispatch({ type: "SELECT_COPY", payload: updated })
     setEditing(null)
-  }, [editing, project.copy.selected, dispatch])
+  }, [editing, editingCustomText, project.copy.selected, dispatch])
 
   // Finish editing on Escape or Enter
   useEffect(() => {
-    if (!editing) return
+    if (!editing && !editingCustomText) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault()
@@ -125,19 +150,19 @@ export default function ComposePage() {
     }
     window.addEventListener("keydown", handleKey)
     return () => window.removeEventListener("keydown", handleKey)
-  }, [editing, finishEditing])
+  }, [editing, editingCustomText, finishEditing])
 
   // Click outside to deselect / finish editing
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (previewRef.current && !previewRef.current.contains(e.target as Node)) {
-        if (editing) finishEditing()
+        if (editing || editingCustomText) finishEditing()
         setSelectedElement(null)
       }
     }
     window.addEventListener("mousedown", handleClickOutside)
     return () => window.removeEventListener("mousedown", handleClickOutside)
-  }, [editing, finishEditing])
+  }, [editing, editingCustomText, finishEditing])
 
   // ── TransformBox callbacks with snap guides ───────────────────
   const handleTextMove = useCallback((pos: { x: number; y: number }) => {
@@ -205,11 +230,25 @@ export default function ComposePage() {
     dispatch({ type: "SELECT_COPY", payload: { ...project.copy.selected, cta: "Shop Now" } })
   }, [project.copy.selected, dispatch])
 
+  const addCustomText = useCallback(() => {
+    const newText: typeof project.composition.customTexts[0] = {
+      id: uuid(),
+      text: "New text",
+      position: { x: 100, y: 300 },
+      fontSize: 32,
+      fontFamily: project.composition.headlineFontFamily,
+      fontWeight: 400,
+      color: project.composition.headlineColor,
+      align: "left",
+    }
+    dispatch({ type: "ADD_CUSTOM_TEXT", payload: newText })
+  }, [project.composition.headlineFontFamily, project.composition.headlineColor, dispatch])
+
   useKeyboardShortcuts({
-    onNext: project.uploadedImage.url && project.copy.selected && !editing ? proceed : undefined,
-    onBack: !editing ? () => router.push("/create/copy") : undefined,
-    onUndo: !editing ? undo : undefined,
-    onRedo: !editing ? redo : undefined,
+    onNext: project.uploadedImage.url && project.copy.selected && !editing && !editingCustomText ? proceed : undefined,
+    onBack: !editing && !editingCustomText ? () => router.push("/create/copy") : undefined,
+    onUndo: !editing && !editingCustomText ? undo : undefined,
+    onRedo: !editing && !editingCustomText ? redo : undefined,
   })
 
   // Common text style helper for contrast methods
@@ -232,7 +271,7 @@ export default function ComposePage() {
         <div>
           <h1 className="text-2xl font-bold">Step 6: Compose</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Drag to move. Double-click text to edit. Style with the panel on the right.
+            Drag to move. Click text to edit. Style with the panel on the right.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -408,7 +447,7 @@ export default function ComposePage() {
                 )}
 
                 <div className="relative">
-                  {/* ── Headline (double-click to edit) ── */}
+                  {/* ── Headline (click to edit) ── */}
                   {editing === "headline" ? (
                     <div
                       ref={editRef}
@@ -430,12 +469,12 @@ export default function ComposePage() {
                     />
                   ) : (
                     <p
-                      onDoubleClick={(e) => {
+                      onClick={(e) => {
                         e.stopPropagation()
                         startEditing("headline")
                       }}
                       className="cursor-text"
-                      title="Double-click to edit"
+                      title="Click to edit"
                       style={{
                         fontSize: project.composition.headlineFontSize * scale,
                         fontFamily: project.composition.headlineFontFamily,
@@ -450,7 +489,7 @@ export default function ComposePage() {
                     </p>
                   )}
 
-                  {/* ── Subhead (double-click to edit, deletable) ── */}
+                  {/* ── Subhead (click to edit, deletable) ── */}
                   {showSubhead && (
                     <div className="group relative">
                       {editing === "subhead" ? (
@@ -474,12 +513,12 @@ export default function ComposePage() {
                         />
                       ) : (
                         <p
-                          onDoubleClick={(e) => {
+                          onClick={(e) => {
                             e.stopPropagation()
                             startEditing("subhead")
                           }}
                           className="cursor-text"
-                          title="Double-click to edit"
+                          title="Click to edit"
                           style={{
                             fontSize: (project.composition.subheadFontSize || 28) * scale,
                             color: project.composition.subheadColor || "#cccccc",
@@ -506,7 +545,7 @@ export default function ComposePage() {
                     </div>
                   )}
 
-                  {/* ── CTA Button (double-click to edit, deletable) ── */}
+                  {/* ── CTA Button (click to edit, deletable) ── */}
                   {showCta && (
                     <div className="group relative inline-block">
                       {editing === "cta" ? (
@@ -534,12 +573,12 @@ export default function ComposePage() {
                         />
                       ) : (
                         <div
-                          onDoubleClick={(e) => {
+                          onClick={(e) => {
                             e.stopPropagation()
                             startEditing("cta")
                           }}
                           className="cursor-text"
-                          title="Double-click to edit"
+                          title="Click to edit"
                           style={{
                             marginTop: 12 * scale,
                             display: "inline-block",
@@ -569,6 +608,63 @@ export default function ComposePage() {
                       )}
                     </div>
                   )}
+
+                  {/* ── Custom Text Elements ── */}
+                  {project.composition.customTexts.map((customText) => (
+                    <div key={customText.id} className="group relative mt-2">
+                      {editingCustomText?.id === customText.id ? (
+                        <div
+                          ref={editRef}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={finishEditing}
+                          className="cursor-text outline-none ring-1 ring-[var(--accent)]"
+                          style={{
+                            fontSize: customText.fontSize * scale,
+                            fontFamily: customText.fontFamily,
+                            fontWeight: customText.fontWeight,
+                            color: customText.color,
+                            textAlign: customText.align,
+                            ...contrastStyles,
+                            minWidth: 40,
+                          }}
+                          dangerouslySetInnerHTML={{ __html: customText.text }}
+                        />
+                      ) : (
+                        <p
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startEditingCustomText(customText.id)
+                          }}
+                          className="cursor-text"
+                          title="Click to edit"
+                          style={{
+                            fontSize: customText.fontSize * scale,
+                            fontFamily: customText.fontFamily,
+                            fontWeight: customText.fontWeight,
+                            color: customText.color,
+                            textAlign: customText.align,
+                            ...contrastStyles,
+                          }}
+                        >
+                          {customText.text}
+                        </p>
+                      )}
+                      {/* Delete custom text button */}
+                      {selectedElement === "text" && !editing && !editingCustomText && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            dispatch({ type: "DELETE_CUSTOM_TEXT", payload: customText.id })
+                          }}
+                          className="absolute -right-2 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white group-hover:flex"
+                          title="Remove text"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
               </TransformBox>
@@ -578,7 +674,7 @@ export default function ComposePage() {
 
         {/* ── Controls Panel ──────────────────────────────────────── */}
         <div className="space-y-5 overflow-y-auto" style={{ maxHeight: "calc(100vh - 200px)" }}>
-          {/* Add back deleted elements */}
+          {/* Add back deleted elements / Add custom text */}
           {project.copy.selected && (!showSubhead || !showCta) && (
             <div className="flex flex-wrap gap-2">
               {!showSubhead && (
@@ -600,13 +696,22 @@ export default function ComposePage() {
             </div>
           )}
 
+          {project.copy.selected && (
+            <button
+              onClick={addCustomText}
+              className="w-full rounded border border-zinc-700 px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              + Add text
+            </button>
+          )}
+
           <TextStylePanel />
           <ProductImageControls />
 
           <div className="rounded-lg bg-zinc-900 p-3 text-xs text-zinc-500">
             <p>Position: {project.composition.textPosition.x}, {project.composition.textPosition.y}</p>
             <p>Canvas: {width}x{height}</p>
-            <p className="mt-1 text-zinc-600">Tip: Double-click text on canvas to edit inline</p>
+            <p className="mt-1 text-zinc-600">Tip: Click text on canvas to edit inline</p>
           </div>
         </div>
       </div>

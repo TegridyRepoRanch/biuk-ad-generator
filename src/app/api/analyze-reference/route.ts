@@ -6,12 +6,19 @@ import { extractJSON } from "@/lib/parse-json"
 import { rateLimit } from "@/lib/rate-limit"
 import { errorResponse } from "@/lib/api-error"
 import { MAX_IMAGE_BASE64_SIZE } from "@/lib/constants"
+import { logInfo, logWarn, logRequest } from "@/lib/logger"
+
+const ROUTE_NAME = "analyze-reference"
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now()
+  logInfo(ROUTE_NAME, "Request received")
+
   try {
     // Rate limit: 20 req/min
-    const { allowed } = rateLimit("analyze-reference", 20, 60_000)
+    const { allowed } = rateLimit(ROUTE_NAME, 20, 60_000)
     if (!allowed) {
+      logWarn(ROUTE_NAME, "Rate limit exceeded")
       return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 })
     }
     const formData = await req.formData()
@@ -38,9 +45,10 @@ export async function POST(req: NextRequest) {
     )
 
     const parsed: ReferenceAnalysis = { ...extractJSON(text), imageId }
+    logRequest(ROUTE_NAME, "POST", Date.now() - startTime)
     return NextResponse.json(parsed)
   } catch (error) {
     console.error("Reference analysis error:", error)
-    return errorResponse(error)
+    return errorResponse(error, ROUTE_NAME)
   }
 }

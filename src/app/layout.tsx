@@ -6,7 +6,7 @@ import { ToastProvider } from "@/lib/toast"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Ad Creator",
+  title: "BIUK Ad Generator",
   description: "Create stunning social media ads in 7 steps with AI-powered tools",
 }
 

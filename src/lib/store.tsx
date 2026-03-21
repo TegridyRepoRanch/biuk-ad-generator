@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useReducer, useEffect, useState, useRef, ReactNode, Dispatch, useCallback } from "react"
 import { v4 as uuid } from "uuid"
-import { AdProject, ConceptAngle, CopyVariation, Platform, ContrastMethod, CTAStyle, GradientConfig, ProductAnalysis, CreativeResearch, ProductImageLayer } from "@/types/ad"
+import { AdProject, ConceptAngle, CopyVariation, Platform, ContrastMethod, CTAStyle, GradientConfig, ProductAnalysis, CreativeResearch, ProductImageLayer, CustomTextElement } from "@/types/ad"
 
 // Batch image keys for IndexedDB
 function batchImgKey(index: number) {
@@ -86,6 +86,7 @@ function createDefaultProject(): AdProject {
         fontSize: 24,
       },
       supportElements: [],
+      customTexts: [],
     },
 
     batch: {
@@ -151,6 +152,11 @@ function loadFromLocalStorage(): AdProject | null {
     if (!parsed.batch) {
       parsed.batch = { images: [], copies: [] }
     }
+    if (!parsed.composition?.customTexts) {
+      if (parsed.composition) {
+        parsed.composition.customTexts = []
+      }
+    }
     return parsed as AdProject
   } catch {
     return null
@@ -179,6 +185,9 @@ type Action =
   | { type: "SET_OVERLAY_GRADIENT"; payload: GradientConfig | undefined }
   | { type: "SET_PRODUCT_IMAGE"; payload: ProductImageLayer | undefined }
   | { type: "UPDATE_PRODUCT_IMAGE"; payload: Partial<ProductImageLayer> }
+  | { type: "ADD_CUSTOM_TEXT"; payload: CustomTextElement }
+  | { type: "UPDATE_CUSTOM_TEXT"; payload: { id: string; updates: Partial<CustomTextElement> } }
+  | { type: "DELETE_CUSTOM_TEXT"; payload: string }
   | { type: "TOGGLE_BATCH_IMAGE"; payload: { url: string; aiDescription?: string } }
   | { type: "CLEAR_BATCH_IMAGES" }
   | { type: "TOGGLE_BATCH_COPY"; payload: CopyVariation }
@@ -356,6 +365,35 @@ function reducer(state: AdProject, action: Action): AdProject {
         },
       }
     }
+
+    case "ADD_CUSTOM_TEXT":
+      return {
+        ...updated,
+        composition: {
+          ...updated.composition,
+          customTexts: [...updated.composition.customTexts, action.payload],
+        },
+      }
+
+    case "UPDATE_CUSTOM_TEXT": {
+      const idx = updated.composition.customTexts.findIndex((t) => t.id === action.payload.id)
+      if (idx < 0) return updated
+      const newCustomTexts = [...updated.composition.customTexts]
+      newCustomTexts[idx] = { ...newCustomTexts[idx], ...action.payload.updates }
+      return {
+        ...updated,
+        composition: { ...updated.composition, customTexts: newCustomTexts },
+      }
+    }
+
+    case "DELETE_CUSTOM_TEXT":
+      return {
+        ...updated,
+        composition: {
+          ...updated.composition,
+          customTexts: updated.composition.customTexts.filter((t) => t.id !== action.payload),
+        },
+      }
 
     case "TOGGLE_BATCH_IMAGE": {
       const existing = updated.batch.images

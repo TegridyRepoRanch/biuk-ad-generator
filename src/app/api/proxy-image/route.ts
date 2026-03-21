@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
 import { validateExternalUrl } from "@/lib/url-validation"
 import { rateLimit } from "@/lib/rate-limit"
+import { errorResponse } from "@/lib/api-error"
+import { logInfo, logWarn, logRequest } from "@/lib/logger"
+
+const ROUTE_NAME = "proxy-image"
 
 /**
  * GET /api/proxy-image?url=...
  * Proxies external images to avoid CORS issues in canvas export.
  */
 export async function GET(req: NextRequest) {
-  const { allowed } = rateLimit("proxy-image", 60, 60_000)
+  const startTime = Date.now()
+  logInfo(ROUTE_NAME, "Request received")
+
+  const { allowed } = rateLimit(ROUTE_NAME, 60, 60_000)
   if (!allowed) {
+    logWarn(ROUTE_NAME, "Rate limit exceeded")
     return NextResponse.json({ error: "Too many requests" }, { status: 429 })
   }
 
@@ -40,6 +48,7 @@ export async function GET(req: NextRequest) {
     }
 
     const buffer = await res.arrayBuffer()
+    logRequest(ROUTE_NAME, "GET", Date.now() - startTime)
 
     return new NextResponse(buffer, {
       headers: {
@@ -47,7 +56,8 @@ export async function GET(req: NextRequest) {
         "Cache-Control": "public, max-age=86400",
       },
     })
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch image" }, { status: 502 })
+  } catch (error) {
+    console.error("Proxy image error:", error)
+    return errorResponse(error, ROUTE_NAME)
   }
 }

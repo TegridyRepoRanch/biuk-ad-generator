@@ -6,6 +6,9 @@ import { validateExternalUrl } from "@/lib/url-validation"
 import { rateLimit } from "@/lib/rate-limit"
 import { errorResponse } from "@/lib/api-error"
 import { MAX_URL_LENGTH } from "@/lib/constants"
+import { logInfo, logWarn, logRequest } from "@/lib/logger"
+
+const ROUTE_NAME = "scrape-product"
 
 /**
  * POST /api/scrape-product
@@ -13,10 +16,14 @@ import { MAX_URL_LENGTH } from "@/lib/constants"
  * Returns cached data if the URL has been seen before.
  */
 export async function POST(req: NextRequest) {
+  const startTime = Date.now()
+  logInfo(ROUTE_NAME, "Request received")
+
   try {
     // Rate limit: 10 req/min
-    const { allowed } = rateLimit("scrape-product", 10, 60_000)
+    const { allowed } = rateLimit(ROUTE_NAME, 10, 60_000)
     if (!allowed) {
+      logWarn(ROUTE_NAME, "Rate limit exceeded")
       return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 })
     }
 
@@ -164,6 +171,7 @@ export async function POST(req: NextRequest) {
       generateCutoutAsync(extracted.heroImage, product.id).catch(console.warn)
     }
 
+    logRequest(ROUTE_NAME, "POST", Date.now() - startTime)
     return NextResponse.json({
       product: product || productData,
       research: researchData,
@@ -171,7 +179,7 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error("Product scrape error:", error)
-    return errorResponse(error)
+    return errorResponse(error, ROUTE_NAME)
   }
 }
 

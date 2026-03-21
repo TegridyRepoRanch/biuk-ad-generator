@@ -5,9 +5,12 @@ import { v4 as uuid } from "uuid"
 import { validateExternalUrl } from "@/lib/url-validation"
 import { rateLimit } from "@/lib/rate-limit"
 import { errorResponse } from "@/lib/api-error"
+import { logInfo, logWarn, logRequest } from "@/lib/logger"
 
 // Allow up to 60s — image generation can be slow
 export const maxDuration = 60
+
+const ROUTE_NAME = "remove-background"
 
 /**
  * POST /api/remove-background
@@ -20,10 +23,14 @@ export const maxDuration = 60
  * Returns: { cutoutUrl: string }
  */
 export async function POST(req: NextRequest) {
+  const startTime = Date.now()
+  logInfo(ROUTE_NAME, "Request received")
+
   try {
     // Rate limit: 10 req/min
-    const { allowed } = rateLimit("remove-background", 10, 60_000)
+    const { allowed } = rateLimit(ROUTE_NAME, 10, 60_000)
     if (!allowed) {
+      logWarn(ROUTE_NAME, "Rate limit exceeded")
       return NextResponse.json({ error: "Too many requests. Please wait a moment." }, { status: 429 })
     }
 
@@ -150,9 +157,10 @@ export async function POST(req: NextRequest) {
         .eq("id", productId)
     }
 
+    logRequest(ROUTE_NAME, "POST", Date.now() - startTime)
     return NextResponse.json({ cutoutUrl })
   } catch (error) {
     console.error("Background removal error:", error)
-    return errorResponse(error)
+    return errorResponse(error, ROUTE_NAME)
   }
 }

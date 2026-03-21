@@ -96,7 +96,7 @@ export default function Home() {
           BIUK Creative
         </div>
         <h1 className="text-5xl font-bold tracking-tight text-white">
-          Ad Creator
+          Ad Generator
         </h1>
         <p className="mt-4 text-lg leading-relaxed text-zinc-400">
           Create scroll-stopping social media ads in 7 structured steps.

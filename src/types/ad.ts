@@ -153,6 +153,17 @@ export interface ProductImageLayer {
   visible: boolean
 }
 
+export interface CustomTextElement {
+  id: string
+  text: string
+  position: { x: number; y: number }
+  fontSize: number
+  fontFamily: string
+  fontWeight: number
+  color: string
+  align: "left" | "center" | "right"
+}
+
 export interface AdProject {
   id: string
   name: string
@@ -238,6 +249,7 @@ export interface AdProject {
       position: { x: number; y: number }
       size: { width: number; height: number }
     }>
+    customTexts: CustomTextElement[]
   }
 
   batch: {
