@@ -102,10 +102,12 @@ export async function POST(request: NextRequest) {
     const scenePrompts: Array<{ dna: string; prompt: string }> = []
 
     if (scenePromptOverride) {
-      // Single override scene
+      // Generate sceneCount variations of the override prompt
       const prompt = buildPhotographyPrompt(scenePromptOverride)
-      scenePrompts.push({ dna: scenePromptOverride, prompt })
-      logInfo(ROUTE_NAME, `Using scene prompt override`)
+      for (let i = 0; i < sceneCount; i++) {
+        scenePrompts.push({ dna: scenePromptOverride, prompt })
+      }
+      logInfo(ROUTE_NAME, `Using scene prompt override (${sceneCount} variations)`)
     } else {
       // Select unique scenes from DNA pool
       const usedScenes: string[] = []
