@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useReducer, useEffect, useState, useRef, ReactNode, Dispatch, useCallback } from "react"
 import { v4 as uuid } from "uuid"
-import { AdProject, ConceptAngle, CopyVariation, Platform, ContrastMethod, CTAStyle, GradientConfig, ProductAnalysis, CreativeResearch, ProductImageLayer, CustomTextElement } from "@/types/ad"
+import { AdProject, ConceptAngle, CopyVariation, Platform, ContrastMethod, CTAStyle, GradientConfig, ProductAnalysis, CreativeResearch, ProductImageLayer, CustomTextElement, CalloutElement } from "@/types/ad"
 
 // Batch image keys for IndexedDB
 function batchImgKey(index: number) {
@@ -87,6 +87,7 @@ function createDefaultProject(): AdProject {
       },
       supportElements: [],
       customTexts: [],
+      callouts: [],
     },
 
     batch: {
@@ -157,6 +158,11 @@ function loadFromLocalStorage(): AdProject | null {
         parsed.composition.customTexts = []
       }
     }
+    if (!parsed.composition?.callouts) {
+      if (parsed.composition) {
+        parsed.composition.callouts = []
+      }
+    }
     return parsed as AdProject
   } catch {
     return null
@@ -188,6 +194,11 @@ type Action =
   | { type: "ADD_CUSTOM_TEXT"; payload: CustomTextElement }
   | { type: "UPDATE_CUSTOM_TEXT"; payload: { id: string; updates: Partial<CustomTextElement> } }
   | { type: "DELETE_CUSTOM_TEXT"; payload: string }
+  | { type: "ADD_CALLOUT"; payload: CalloutElement }
+  | { type: "UPDATE_CALLOUT"; payload: { id: string; updates: Partial<CalloutElement> } }
+  | { type: "DELETE_CALLOUT"; payload: string }
+  | { type: "MOVE_CALLOUT"; payload: { id: string; position: { x: number; y: number } } }
+  | { type: "MOVE_CALLOUT_ANCHOR"; payload: { id: string; anchorPoint: { x: number; y: number } } }
   | { type: "TOGGLE_BATCH_IMAGE"; payload: { url: string; aiDescription?: string } }
   | { type: "CLEAR_BATCH_IMAGES" }
   | { type: "TOGGLE_BATCH_COPY"; payload: CopyVariation }
@@ -395,6 +406,45 @@ function reducer(state: AdProject, action: Action): AdProject {
         },
       }
 
+    case "ADD_CALLOUT":
+      return {
+        ...updated,
+        composition: {
+          ...updated.composition,
+          callouts: [...(updated.composition.callouts ?? []), action.payload],
+        },
+      }
+
+    case "UPDATE_CALLOUT": {
+      const callouts = (updated.composition.callouts ?? []).map((c) =>
+        c.id === action.payload.id ? { ...c, ...action.payload.updates } : c
+      )
+      return { ...updated, composition: { ...updated.composition, callouts } }
+    }
+
+    case "DELETE_CALLOUT":
+      return {
+        ...updated,
+        composition: {
+          ...updated.composition,
+          callouts: (updated.composition.callouts ?? []).filter((c) => c.id !== action.payload),
+        },
+      }
+
+    case "MOVE_CALLOUT": {
+      const callouts = (updated.composition.callouts ?? []).map((c) =>
+        c.id === action.payload.id ? { ...c, position: action.payload.position } : c
+      )
+      return { ...updated, composition: { ...updated.composition, callouts } }
+    }
+
+    case "MOVE_CALLOUT_ANCHOR": {
+      const callouts = (updated.composition.callouts ?? []).map((c) =>
+        c.id === action.payload.id ? { ...c, anchorPoint: action.payload.anchorPoint } : c
+      )
+      return { ...updated, composition: { ...updated.composition, callouts } }
+    }
+
     case "TOGGLE_BATCH_IMAGE": {
       const existing = updated.batch.images
       const idx = existing.findIndex((i) => i.url === action.payload.url)
@@ -517,7 +567,7 @@ const UndoContext = createContext<{ canUndo: boolean; canRedo: boolean; undo: ()
 })
 
 // Actions that fire very frequently during drag/slider — debounce for history
-const HIGH_FREQ_ACTIONS = new Set(["SET_TEXT_POSITION", "UPDATE_COMPOSITION", "SET_CTA_STYLE", "SET_OVERLAY_GRADIENT", "UPDATE_PRODUCT_IMAGE"])
+const HIGH_FREQ_ACTIONS = new Set(["SET_TEXT_POSITION", "UPDATE_COMPOSITION", "SET_CTA_STYLE", "SET_OVERLAY_GRADIENT", "UPDATE_PRODUCT_IMAGE", "MOVE_CALLOUT", "MOVE_CALLOUT_ANCHOR"])
 const HISTORY_LIMIT = 30
 
 export function ProjectProvider({ children }: { children: ReactNode }) {

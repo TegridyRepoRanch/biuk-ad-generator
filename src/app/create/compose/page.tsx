@@ -244,6 +244,65 @@ export default function ComposePage() {
     dispatch({ type: "ADD_CUSTOM_TEXT", payload: newText })
   }, [project.composition.headlineFontFamily, project.composition.headlineColor, dispatch])
 
+  const addCallout = useCallback(() => {
+    dispatch({
+      type: "ADD_CALLOUT",
+      payload: {
+        id: uuid(),
+        text: "Feature",
+        position: { x: 50, y: 200 },
+        anchorPoint: { x: 300, y: 300 },
+        fontSize: 24,
+        fontFamily: "'Inter', sans-serif",
+        fontWeight: 700,
+        textColor: "#1a1a1a",
+        bgColor: "#FFFDE7",
+        lineColor: "#D4C96B",
+        dotRadius: 5,
+        lineWidth: 1.5,
+        borderRadius: 8,
+        padding: { x: 16, y: 10 },
+      },
+    })
+  }, [dispatch])
+
+  // Callout drag state
+  const draggingCallout = useRef<{ id: string; type: "bubble" | "anchor"; startX: number; startY: number; origX: number; origY: number } | null>(null)
+
+  const handleCalloutMouseDown = useCallback((e: React.MouseEvent, id: string, type: "bubble" | "anchor") => {
+    e.stopPropagation()
+    e.preventDefault()
+    const callout = (project.composition.callouts ?? []).find(c => c.id === id)
+    if (!callout) return
+    draggingCallout.current = {
+      id,
+      type,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: type === "bubble" ? callout.position.x : callout.anchorPoint.x,
+      origY: type === "bubble" ? callout.position.y : callout.anchorPoint.y,
+    }
+    const onMove = (ev: MouseEvent) => {
+      if (!draggingCallout.current) return
+      const dx = (ev.clientX - draggingCallout.current.startX) / scale
+      const dy = (ev.clientY - draggingCallout.current.startY) / scale
+      const nx = draggingCallout.current.origX + dx
+      const ny = draggingCallout.current.origY + dy
+      if (draggingCallout.current.type === "bubble") {
+        dispatch({ type: "MOVE_CALLOUT", payload: { id: draggingCallout.current.id, position: { x: nx, y: ny } } })
+      } else {
+        dispatch({ type: "MOVE_CALLOUT_ANCHOR", payload: { id: draggingCallout.current.id, anchorPoint: { x: nx, y: ny } } })
+      }
+    }
+    const onUp = () => {
+      draggingCallout.current = null
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }, [project.composition.callouts, scale, dispatch])
+
   useKeyboardShortcuts({
     onNext: project.uploadedImage.url && project.copy.selected && !editing && !editingCustomText ? proceed : undefined,
     onBack: !editing && !editingCustomText ? () => router.push("/create/copy") : undefined,
@@ -410,6 +469,97 @@ export default function ComposePage() {
                 }
               />
             ))}
+
+            {/* Callout Elements */}
+            {(project.composition.callouts ?? []).map((callout) => {
+              // Estimate bubble size
+              const fs = callout.fontSize * scale
+              const padX = callout.padding.x * scale
+              const padY = callout.padding.y * scale
+              const lines = callout.text.split('\n')
+              const lineH = fs * 1.3
+              const approxCharW = fs * 0.6
+              const maxLineLen = Math.max(...lines.map(l => l.length))
+              const bubbleW = maxLineLen * approxCharW + padX * 2
+              const bubbleH = lines.length * lineH + padY * 2
+              const bx = callout.position.x * scale
+              const by = callout.position.y * scale
+              const ax = callout.anchorPoint.x * scale
+              const ay = callout.anchorPoint.y * scale
+              const bcx = bx + bubbleW / 2
+              const bcy = by + bubbleH / 2
+              const angle = Math.atan2(ay - bcy, ax - bcx)
+              const cos = Math.cos(angle)
+              const sin = Math.sin(angle)
+              const halfW = bubbleW / 2
+              const halfH = bubbleH / 2
+              let edgeX: number, edgeY: number
+              if (Math.abs(cos * halfH) > Math.abs(sin * halfW)) {
+                edgeX = bcx + Math.sign(cos) * halfW
+                edgeY = bcy + sin * (halfW / Math.abs(cos))
+              } else {
+                edgeX = bcx + cos * (halfH / Math.abs(sin))
+                edgeY = bcy + Math.sign(sin) * halfH
+              }
+              const lineLen = Math.sqrt((ax - edgeX) ** 2 + (ay - edgeY) ** 2)
+              const angleDeg = Math.atan2(ay - edgeY, ax - edgeX) * 180 / Math.PI
+              return (
+                <div key={callout.id} className="pointer-events-none absolute inset-0">
+                  {/* Leader line via rotated div */}
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: edgeX,
+                      top: edgeY,
+                      width: lineLen,
+                      height: callout.lineWidth,
+                      background: callout.lineColor,
+                      transformOrigin: "0 50%",
+                      transform: `rotate(${angleDeg}deg)`,
+                    }}
+                  />
+                  {/* Anchor dot */}
+                  <div
+                    className="pointer-events-auto absolute cursor-move"
+                    style={{
+                      left: ax - callout.dotRadius * scale,
+                      top: ay - callout.dotRadius * scale,
+                      width: callout.dotRadius * scale * 2,
+                      height: callout.dotRadius * scale * 2,
+                      borderRadius: "50%",
+                      background: callout.lineColor,
+                    }}
+                    onMouseDown={(e) => handleCalloutMouseDown(e, callout.id, "anchor")}
+                  />
+                  {/* Bubble */}
+                  <div
+                    className="pointer-events-auto absolute cursor-move select-none"
+                    style={{
+                      left: bx,
+                      top: by,
+                      width: bubbleW,
+                      height: bubbleH,
+                      background: callout.bgColor,
+                      borderRadius: callout.borderRadius * scale,
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: fs,
+                      fontFamily: callout.fontFamily,
+                      fontWeight: callout.fontWeight,
+                      color: callout.textColor,
+                      whiteSpace: "pre",
+                      padding: `${padY}px ${padX}px`,
+                      boxSizing: "border-box",
+                    }}
+                    onMouseDown={(e) => handleCalloutMouseDown(e, callout.id, "bubble")}
+                  >
+                    {callout.text}
+                  </div>
+                </div>
+              )
+            })}
 
             {/* Empty state */}
             {!project.copy.selected && (
@@ -704,6 +854,70 @@ export default function ComposePage() {
               + Add text
             </button>
           )}
+
+          {/* Callouts Section */}
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-zinc-300">Callout Bubbles</span>
+              <button
+                onClick={addCallout}
+                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+              >
+                + Add
+              </button>
+            </div>
+            {(project.composition.callouts ?? []).length === 0 && (
+              <p className="text-xs text-zinc-600">No callouts yet</p>
+            )}
+            {(project.composition.callouts ?? []).map((callout) => (
+              <div key={callout.id} className="mt-2 rounded border border-zinc-700 bg-zinc-800 p-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={callout.text}
+                    onChange={(e) => dispatch({ type: "UPDATE_CALLOUT", payload: { id: callout.id, updates: { text: e.target.value } } })}
+                    className="flex-1 rounded border border-zinc-600 bg-zinc-700 px-2 py-0.5 text-xs text-zinc-200 outline-none focus:border-[var(--accent)]"
+                    placeholder="Callout text"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button
+                    onClick={() => dispatch({ type: "DELETE_CALLOUT", payload: callout.id })}
+                    className="h-5 w-5 flex items-center justify-center rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/40 text-xs"
+                    title="Delete callout"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-zinc-500">Bubble</label>
+                  <input
+                    type="color"
+                    value={callout.bgColor}
+                    onChange={(e) => dispatch({ type: "UPDATE_CALLOUT", payload: { id: callout.id, updates: { bgColor: e.target.value } } })}
+                    className="h-5 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                    title="Bubble color"
+                  />
+                  <label className="text-xs text-zinc-500">Text</label>
+                  <input
+                    type="color"
+                    value={callout.textColor}
+                    onChange={(e) => dispatch({ type: "UPDATE_CALLOUT", payload: { id: callout.id, updates: { textColor: e.target.value } } })}
+                    className="h-5 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                    title="Text color"
+                  />
+                  <label className="text-xs text-zinc-500">Line</label>
+                  <input
+                    type="color"
+                    value={callout.lineColor}
+                    onChange={(e) => dispatch({ type: "UPDATE_CALLOUT", payload: { id: callout.id, updates: { lineColor: e.target.value } } })}
+                    className="h-5 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                    title="Line color"
+                  />
+                </div>
+                <div className="text-xs text-zinc-600">Drag bubble or dot on canvas to reposition</div>
+              </div>
+            ))}
+          </div>
 
           <TextStylePanel />
           <ProductImageControls />

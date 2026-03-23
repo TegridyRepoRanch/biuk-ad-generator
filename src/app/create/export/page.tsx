@@ -336,6 +336,92 @@ export default function ExportPage() {
     ctx.shadowBlur = 0
     ctx.shadowOffsetY = 0
 
+    // Draw callout elements
+    for (const callout of (project.composition.callouts ?? [])) {
+      const fontSize = callout.fontSize * sf
+      const padX = callout.padding.x * sf
+      const padY = callout.padding.y * sf
+      const dotR = callout.dotRadius * sf
+      const lineW = callout.lineWidth * sf
+      const borderR = callout.borderRadius * sf
+
+      ctx.font = `${callout.fontWeight} ${fontSize}px ${callout.fontFamily}`
+      const lines = callout.text.split('\n')
+      const lineHeight = fontSize * 1.3
+      const textWidths = lines.map(l => ctx.measureText(l).width)
+      const maxTextWidth = Math.max(...textWidths)
+
+      const bubbleW = maxTextWidth + padX * 2
+      const bubbleH = lines.length * lineHeight + padY * 2
+      const bx = callout.position.x * sf
+      const by = callout.position.y * sf
+      const ax = callout.anchorPoint.x * sf
+      const ay = callout.anchorPoint.y * sf
+
+      // Find nearest edge point of bubble to anchor
+      const bcx = bx + bubbleW / 2
+      const bcy = by + bubbleH / 2
+      const angle = Math.atan2(ay - bcy, ax - bcx)
+      const cos = Math.cos(angle)
+      const sin = Math.sin(angle)
+      const halfW = bubbleW / 2
+      const halfH = bubbleH / 2
+      let edgeX: number
+      let edgeY: number
+
+      if (Math.abs(cos * halfH) > Math.abs(sin * halfW)) {
+        edgeX = bcx + Math.sign(cos) * halfW
+        edgeY = bcy + sin * (halfW / Math.abs(cos))
+      } else {
+        edgeX = bcx + cos * (halfH / Math.abs(sin))
+        edgeY = bcy + Math.sign(sin) * halfH
+      }
+
+      // Draw leader line
+      ctx.strokeStyle = callout.lineColor
+      ctx.lineWidth = lineW
+      ctx.beginPath()
+      ctx.moveTo(edgeX, edgeY)
+      ctx.lineTo(ax, ay)
+      ctx.stroke()
+
+      // Draw dot at anchor point
+      ctx.fillStyle = callout.lineColor
+      ctx.beginPath()
+      ctx.arc(ax, ay, dotR, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Draw bubble background
+      ctx.fillStyle = callout.bgColor
+      ctx.shadowColor = 'rgba(0,0,0,0.15)'
+      ctx.shadowBlur = 6 * sf
+      ctx.shadowOffsetY = 2 * sf
+      ctx.beginPath()
+      ctx.moveTo(bx + borderR, by)
+      ctx.lineTo(bx + bubbleW - borderR, by)
+      ctx.quadraticCurveTo(bx + bubbleW, by, bx + bubbleW, by + borderR)
+      ctx.lineTo(bx + bubbleW, by + bubbleH - borderR)
+      ctx.quadraticCurveTo(bx + bubbleW, by + bubbleH, bx + bubbleW - borderR, by + bubbleH)
+      ctx.lineTo(bx + borderR, by + bubbleH)
+      ctx.quadraticCurveTo(bx, by + bubbleH, bx, by + bubbleH - borderR)
+      ctx.lineTo(bx, by + borderR)
+      ctx.quadraticCurveTo(bx, by, bx + borderR, by)
+      ctx.closePath()
+      ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.shadowOffsetY = 0
+
+      // Draw text
+      ctx.fillStyle = callout.textColor
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = `${callout.fontWeight} ${fontSize}px ${callout.fontFamily}`
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], bx + bubbleW / 2, by + padY + (i + 0.5) * lineHeight)
+      }
+    }
+
     return canvas.toDataURL("image/png", 1.0)
   }, [project, width, height])
 

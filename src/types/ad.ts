@@ -169,6 +169,23 @@ export interface CustomTextElement {
   align: "left" | "center" | "right"
 }
 
+export interface CalloutElement {
+  id: string
+  text: string
+  position: { x: number; y: number }    // bubble top-left corner
+  anchorPoint: { x: number; y: number } // dot position on the product
+  fontSize: number
+  fontFamily: string
+  fontWeight: number
+  textColor: string
+  bgColor: string
+  lineColor: string
+  dotRadius: number
+  lineWidth: number
+  borderRadius: number
+  padding: { x: number; y: number }
+}
+
 export interface AdProject {
   id: string
   name: string
@@ -255,6 +272,7 @@ export interface AdProject {
       size: { width: number; height: number }
     }>
     customTexts: CustomTextElement[]
+    callouts: CalloutElement[]
   }
 
   batch: {
