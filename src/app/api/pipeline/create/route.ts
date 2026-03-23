@@ -153,8 +153,8 @@ async function renderAdServerSide(
       const px = Math.round((width - targetW) / 2)
       // Center vertically in the middle 70% of the canvas
       // (skip top 15% headline zone and bottom 15% banner zone)
-      const middleZoneTop = Math.round(height * 0.15)
-      const middleZoneH = Math.round(height * 0.70)
+      const middleZoneTop = Math.round(height * 0.22)
+      const middleZoneH = Math.round(height * 0.65)
       const py = middleZoneTop + Math.round((middleZoneH - targetH) / 2)
 
       // Draw product with subtle drop shadow (product now has real transparency)
@@ -194,7 +194,13 @@ async function renderAdServerSide(
   const startX = (width - totalWidth) / 2
   const bannerCenterY = bannerY + bannerHeight / 2
   ctx.textAlign = "left"
+  // Faux extra-bold: stroke behind fill
+  ctx.lineWidth = Math.round(bannerFontSize * 0.05)
+  ctx.strokeStyle = "#1a1a1a"
+  ctx.lineJoin = "round"
+  ctx.strokeText(stars, startX, bannerCenterY)
   ctx.fillText(stars, startX, bannerCenterY)
+  ctx.strokeText(bannerText, startX + starsWidth + gap, bannerCenterY)
   ctx.fillText(bannerText, startX + starsWidth + gap, bannerCenterY)
 
   // Font settings — use bundled AdFont (DejaVu Sans)
@@ -252,7 +258,12 @@ async function renderAdServerSide(
   ctx.shadowOffsetY = 0
 
   let ty = topY
+  // Faux extra-bold: stroke behind fill for thicker appearance
+  ctx.lineWidth = Math.round(headlineFontSize * 0.06)
+  ctx.strokeStyle = headlineColor
+  ctx.lineJoin = "round"
   for (const l of lines) {
+    ctx.strokeText(l, headlineCenterX, ty)
     ctx.fillText(l, headlineCenterX, ty)
     ty += headlineFontSize * 1.15
   }
