@@ -172,13 +172,13 @@ async function renderAdServerSide(
   }
 
   // Draw bottom banner
-  const bannerHeight = Math.round(height * 0.12)
+  const bannerHeight = Math.round(height * 0.13)
   const bannerY = height - bannerHeight
   ctx.fillStyle = bannerColor
   ctx.fillRect(0, bannerY, width, bannerHeight)
 
   // Banner text (stars + text centered)
-  const bannerFontSize = Math.round(width * 0.042)
+  const bannerFontSize = Math.round(width * 0.05)
   const stars = "★★★★★"
   ctx.font = `bold ${bannerFontSize}px AdFont`
   ctx.fillStyle = "#1a1a1a"
@@ -199,7 +199,7 @@ async function renderAdServerSide(
 
   // Font settings — use bundled AdFont (DejaVu Sans)
   const fontFamily = "AdFont"
-  const headlineFontSize = Math.round(width * 0.08)
+  const headlineFontSize = Math.round(width * 0.095)
   const subheadFontSize = Math.round(width * 0.04)
   const headlineColor = "#FFFFFF"
   const subheadColor = "#FFFFFF"
@@ -274,9 +274,9 @@ async function renderAdServerSide(
 
   // Draw callouts
   for (const callout of callouts) {
-    const fontSize = Math.round(width * 0.032)
-    const padX = 20
-    const padY = 14
+    const fontSize = Math.round(width * 0.038)
+    const padX = 24
+    const padY = 18
     const dotR = Math.max(6, Math.round(width * 0.008))
     const lineW = Math.max(3, Math.round(width * 0.003))
     const borderR = 8
@@ -370,13 +370,13 @@ function autoPositionCallouts(
   // Corner positions for callout bubbles (X-pattern radiating from product center)
   const positions = [
     // top-left: bubble at ~5% left, ~20% top; anchor points to upper-left product area
-    { bx: width * 0.05, by: height * 0.20, ax: width * 0.40, ay: height * 0.35 },
+    { bx: width * 0.05, by: height * 0.20, ax: width * 0.40, ay: height * 0.40 },
     // top-right: bubble at ~right-aligned, ~20% top; anchor points to upper-right product area
-    { bx: width * 0.60, by: height * 0.20, ax: width * 0.60, ay: height * 0.35 },
+    { bx: width * 0.60, by: height * 0.20, ax: width * 0.60, ay: height * 0.40 },
     // bottom-left: bubble at ~5% left, ~70% top; anchor points to lower-left product area
-    { bx: width * 0.05, by: height * 0.70, ax: width * 0.40, ay: height * 0.65 },
+    { bx: width * 0.05, by: height * 0.70, ax: width * 0.40, ay: height * 0.52 },
     // bottom-right: bubble at ~right-aligned, ~70% top; anchor points to lower-right product area
-    { bx: width * 0.60, by: height * 0.70, ax: width * 0.60, ay: height * 0.65 },
+    { bx: width * 0.60, by: height * 0.70, ax: width * 0.60, ay: height * 0.52 },
   ]
 
   return calloutInputs.map((callout, i) => {
