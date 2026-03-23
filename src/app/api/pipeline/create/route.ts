@@ -369,14 +369,14 @@ function autoPositionCallouts(
 ): Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }> {
   // Corner positions for callout bubbles (X-pattern radiating from product center)
   const positions = [
-    // top-left: bubble at ~5% left, ~20% top; anchor points to upper-left product area
-    { bx: width * 0.05, by: height * 0.20, ax: width * 0.40, ay: height * 0.40 },
-    // top-right: bubble at ~right-aligned, ~20% top; anchor points to upper-right product area
-    { bx: width * 0.60, by: height * 0.20, ax: width * 0.60, ay: height * 0.40 },
-    // bottom-left: bubble at ~5% left, ~70% top; anchor points to lower-left product area
-    { bx: width * 0.05, by: height * 0.70, ax: width * 0.40, ay: height * 0.52 },
-    // bottom-right: bubble at ~right-aligned, ~70% top; anchor points to lower-right product area
-    { bx: width * 0.60, by: height * 0.70, ax: width * 0.60, ay: height * 0.52 },
+    // top-left: bubble pushed down to 38% from top, far left edge
+    { bx: width * 0.02, by: height * 0.38, ax: width * 0.38, ay: height * 0.42 },
+    // top-right: bubble pushed down to 38% from top, far right edge
+    { bx: width * 0.62, by: height * 0.38, ax: width * 0.62, ay: height * 0.42 },
+    // bottom-left: bubble pushed UP to 55% from top, far left edge
+    { bx: width * 0.02, by: height * 0.55, ax: width * 0.38, ay: height * 0.55 },
+    // bottom-right: bubble pushed UP to 55% from top, far right edge
+    { bx: width * 0.62, by: height * 0.55, ax: width * 0.62, ay: height * 0.55 },
   ]
 
   return calloutInputs.map((callout, i) => {
