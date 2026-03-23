@@ -243,9 +243,10 @@ async function renderAdServerSide(
   const subheadBlockH = subhead ? (8 + subheadFontSize * 1.15) : 0
   const textBlockBottom = topY + headlineBlockH + subheadBlockH + Math.round(height * 0.02)
   // Gradient covers from top to at least the bottom of all text, minimum 18%
-  const gradStripH = Math.max(Math.round(height * 0.18), textBlockBottom)
+  const gradStripH = Math.max(Math.round(height * 0.28), textBlockBottom + 20)
   const topGrad = ctx.createLinearGradient(0, 0, 0, gradStripH)
-  topGrad.addColorStop(0, "rgba(0,0,0,0.7)")
+  topGrad.addColorStop(0, "rgba(0,0,0,0.85)")
+  topGrad.addColorStop(0.6, "rgba(0,0,0,0.5)")
   topGrad.addColorStop(1, "rgba(0,0,0,0)")
   ctx.fillStyle = topGrad
   ctx.fillRect(0, 0, width, gradStripH)
