@@ -82,7 +82,31 @@ async function renderAdServerSide(
   maxTextWidth: number
 ): Promise<string> {
   // Dynamically import canvas (server-only)
-  const { createCanvas, loadImage } = await import("canvas")
+  const { createCanvas, loadImage, registerFont } = await import("canvas")
+
+  // Register a font if available, otherwise fall back
+  try {
+    const path = await import("path")
+    const fs = await import("fs")
+    // Try common font paths
+    const fontPaths = [
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+      "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+      "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+    for (const fp of fontPaths) {
+      if (fs.existsSync(fp)) {
+        if (fp.includes("Bold")) {
+          registerFont(fp, { family: "Pipeline", weight: "bold" })
+        } else {
+          registerFont(fp, { family: "Pipeline", weight: "normal" })
+        }
+      }
+    }
+  } catch {
+    // Font registration failed — will use defaults
+  }
 
   const canvas = createCanvas(width, height)
   const ctx = canvas.getContext("2d")
@@ -112,8 +136,8 @@ async function renderAdServerSide(
     ctx.fillRect(0, 0, width, height)
   }
 
-  // Font settings
-  const fontFamily = "sans-serif"
+  // Font settings — use registered Pipeline font or DejaVu Sans as fallback
+  const fontFamily = "Pipeline, DejaVu Sans, Liberation Sans, Arial, sans-serif"
   const headlineFontSize = Math.round(width * 0.06)
   const subheadFontSize = Math.round(width * 0.035)
   const ctaFontSize = Math.round(width * 0.035)
