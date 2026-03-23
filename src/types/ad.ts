@@ -169,6 +169,14 @@ export interface CustomTextElement {
   align: "left" | "center" | "right"
 }
 
+export interface BannerConfig {
+  visible: boolean
+  color: string
+  text: string
+  textColor: string
+  showStars: boolean
+}
+
 export interface CalloutElement {
   id: string
   text: string
@@ -273,6 +281,7 @@ export interface AdProject {
     }>
     customTexts: CustomTextElement[]
     callouts: CalloutElement[]
+    banner?: BannerConfig
   }
 
   batch: {

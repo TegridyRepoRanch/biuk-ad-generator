@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getGeminiClient, GEMINI_PRO, GEMINI_FLASH, generateText, describeImageWithVision } from "@/lib/gemini"
+import { getGeminiClient, GEMINI_PRO, GEMINI_FLASH, NANO_BANANA_2, generateText, describeImageWithVision } from "@/lib/gemini"
 import {
   CONCEPT_SYSTEM_PROMPT,
   buildConceptUserPrompt,
@@ -28,6 +28,8 @@ function checkApiKey(request: NextRequest): boolean {
 
 interface CalloutInput {
   text: string
+  anchorX?: number  // optional anchor override as fraction 0-1 of canvas width
+  anchorY?: number  // optional anchor override as fraction 0-1 of canvas height
 }
 
 interface PipelineRequest {
@@ -38,6 +40,9 @@ interface PipelineRequest {
   callouts?: CalloutInput[]
   imageModel?: string
   count?: number
+  productUrl?: string
+  bannerColor?: string
+  bannerText?: string
 }
 
 interface HeadlineVariation {
@@ -79,7 +84,9 @@ async function renderAdServerSide(
   callouts: Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }>,
   textX: number,
   textY: number,
-  maxTextWidth: number
+  maxTextWidth: number,
+  bannerColor: string = "#D4C96B",
+  bannerText: string = "SUBSCRIBE & SAVE 20%"
 ): Promise<string> {
   // Dynamically import canvas (server-only)
   const { createCanvas, loadImage, registerFont } = await import("canvas")
@@ -130,35 +137,46 @@ async function renderAdServerSide(
     ctx.fillRect(0, 0, width, height)
   }
 
+  // Draw bottom banner
+  const bannerHeight = Math.round(height * 0.10)
+  const bannerY = height - bannerHeight
+  ctx.fillStyle = bannerColor
+  ctx.fillRect(0, bannerY, width, bannerHeight)
+
+  // Banner text (stars + text centered)
+  const bannerFontSize = Math.round(width * 0.035)
+  const stars = "★★★★★"
+  ctx.font = `bold ${bannerFontSize}px AdFont`
+  ctx.fillStyle = "#1a1a1a"
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+  ctx.shadowColor = "transparent"
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
+  const starsWidth = ctx.measureText(stars).width
+  const gap = Math.round(width * 0.015)
+  const bannerTextWidth = ctx.measureText(bannerText).width
+  const totalWidth = starsWidth + gap + bannerTextWidth
+  const startX = (width - totalWidth) / 2
+  const bannerCenterY = bannerY + bannerHeight / 2
+  ctx.textAlign = "left"
+  ctx.fillText(stars, startX, bannerCenterY)
+  ctx.fillText(bannerText, startX + starsWidth + gap, bannerCenterY)
+
   // Font settings — use bundled AdFont (DejaVu Sans)
   const fontFamily = "AdFont"
   const headlineFontSize = Math.round(width * 0.06)
-  const subheadFontSize = Math.round(width * 0.035)
-  const ctaFontSize = Math.round(width * 0.035)
+  const subheadFontSize = Math.round(width * 0.028)
   const headlineColor = "#FFFFFF"
   const subheadColor = "#DDDDDD"
   const headlineWeight = "bold"
 
-  let ty = textY
+  // Headline renders at the top (~5% from top)
+  const topY = Math.round(height * 0.05)
+  const headlineCenterX = width / 2
 
-  // Draw solid block background if needed
-  if (contrastMethod === "solid-block") {
-    ctx.fillStyle = "rgba(0,0,0,0.7)"
-    ctx.fillRect(textX - 24, textY - 24, maxTextWidth + 48, headlineFontSize * 3 + 80)
-  }
-
-  // Draw headline
+  // Word-wrap headline (centered)
   ctx.font = `${headlineWeight} ${headlineFontSize}px ${fontFamily}`
-  ctx.fillStyle = headlineColor
-  ctx.textAlign = "left"
-  ctx.textBaseline = "top"
-
-  // Text shadow
-  ctx.shadowColor = "rgba(0,0,0,0.6)"
-  ctx.shadowBlur = 8
-  ctx.shadowOffsetY = 2
-
-  // Word-wrap headline
   const words = headline.split(" ")
   let line = ""
   const lines: string[] = []
@@ -173,8 +191,31 @@ async function renderAdServerSide(
   }
   if (line) lines.push(line)
 
+  // Measure total headline block height
+  const headlineBlockHeight = lines.length * headlineFontSize * 1.15
+  const subheadBlockHeight = subhead ? (subheadFontSize * 1.15 + 8) : 0
+  const backdropPad = 16
+  const backdropH = headlineBlockHeight + subheadBlockHeight + backdropPad * 2
+  ctx.fillStyle = "rgba(0,0,0,0.45)"
+  ctx.fillRect(
+    headlineCenterX - maxTextWidth / 2 - backdropPad,
+    topY - backdropPad,
+    maxTextWidth + backdropPad * 2,
+    backdropH
+  )
+
+  // Draw headline lines (centered)
+  ctx.font = `${headlineWeight} ${headlineFontSize}px ${fontFamily}`
+  ctx.fillStyle = headlineColor
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  ctx.shadowColor = "rgba(0,0,0,0.6)"
+  ctx.shadowBlur = 8
+  ctx.shadowOffsetY = 2
+
+  let ty = topY
   for (const l of lines) {
-    ctx.fillText(l, textX, ty)
+    ctx.fillText(l, headlineCenterX, ty)
     ty += headlineFontSize * 1.15
   }
 
@@ -182,43 +223,14 @@ async function renderAdServerSide(
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
 
-  // Draw subhead
+  // Draw subhead below headline at top
   if (subhead) {
     ty += 8
     ctx.font = `400 ${subheadFontSize}px ${fontFamily}`
     ctx.fillStyle = subheadColor
-    ctx.fillText(subhead, textX, ty)
-    ty += subheadFontSize * 1.15
-  }
-
-  // Draw CTA button
-  if (cta) {
-    ty += 16
-    const ctaPadX = 24
-    const ctaPadY = 12
-    ctx.font = `700 ${ctaFontSize}px ${fontFamily}`
-    const ctaWidth = ctx.measureText(cta).width + ctaPadX * 2
-    const ctaHeight = ctaFontSize + ctaPadY * 2
-    const r = 8
-
-    ctx.fillStyle = "#FFFFFF"
-    ctx.beginPath()
-    ctx.moveTo(textX + r, ty)
-    ctx.lineTo(textX + ctaWidth - r, ty)
-    ctx.quadraticCurveTo(textX + ctaWidth, ty, textX + ctaWidth, ty + r)
-    ctx.lineTo(textX + ctaWidth, ty + ctaHeight - r)
-    ctx.quadraticCurveTo(textX + ctaWidth, ty + ctaHeight, textX + ctaWidth - r, ty + ctaHeight)
-    ctx.lineTo(textX + r, ty + ctaHeight)
-    ctx.quadraticCurveTo(textX, ty + ctaHeight, textX, ty + ctaHeight - r)
-    ctx.lineTo(textX, ty + r)
-    ctx.quadraticCurveTo(textX, ty, textX + r, ty)
-    ctx.closePath()
-    ctx.fill()
-
-    ctx.fillStyle = "#000000"
     ctx.textAlign = "center"
-    ctx.textBaseline = "middle"
-    ctx.fillText(cta, textX + ctaWidth / 2, ty + ctaHeight / 2)
+    ctx.fillText(subhead, headlineCenterX, ty)
+    ty += subheadFontSize * 1.15
   }
 
   // Draw callouts
@@ -311,26 +323,125 @@ async function renderAdServerSide(
 // ── Auto-position callouts on the image ──────────────────────────
 
 function autoPositionCallouts(
-  calloutTexts: string[],
+  calloutInputs: CalloutInput[],
   width: number,
   height: number
 ): Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }> {
-  // Spread callouts around the center of the image
+  // Corner positions for callout bubbles (X-pattern radiating from product center)
   const positions = [
-    { bx: width * 0.05, by: height * 0.15, ax: width * 0.25, ay: height * 0.35 },
-    { bx: width * 0.60, by: height * 0.15, ax: width * 0.75, ay: height * 0.35 },
-    { bx: width * 0.05, by: height * 0.60, ax: width * 0.25, ay: height * 0.60 },
-    { bx: width * 0.60, by: height * 0.60, ax: width * 0.75, ay: height * 0.60 },
+    // top-left: bubble at ~5% left, ~20% top; anchor points to upper-left product area
+    { bx: width * 0.05, by: height * 0.20, ax: width * 0.40, ay: height * 0.35 },
+    // top-right: bubble at ~right-aligned, ~20% top; anchor points to upper-right product area
+    { bx: width * 0.60, by: height * 0.20, ax: width * 0.60, ay: height * 0.35 },
+    // bottom-left: bubble at ~5% left, ~70% top; anchor points to lower-left product area
+    { bx: width * 0.05, by: height * 0.70, ax: width * 0.40, ay: height * 0.65 },
+    // bottom-right: bubble at ~right-aligned, ~70% top; anchor points to lower-right product area
+    { bx: width * 0.60, by: height * 0.70, ax: width * 0.60, ay: height * 0.65 },
   ]
 
-  return calloutTexts.map((text, i) => {
+  return calloutInputs.map((callout, i) => {
     const pos = positions[i % positions.length]
     return {
-      text,
+      text: callout.text,
       position: { x: pos.bx, y: pos.by },
-      anchorPoint: { x: pos.ax, y: pos.ay },
+      // Use explicit anchor if provided, otherwise default toward product center
+      anchorPoint: {
+        x: callout.anchorX !== undefined ? callout.anchorX * width : pos.ax,
+        y: callout.anchorY !== undefined ? callout.anchorY * height : pos.ay,
+      },
     }
   })
+}
+
+// ── Product image helpers ─────────────────────────────────────────
+
+async function scrapeProductHeroImage(productUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(productUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (!res.ok) throw new Error(`Failed to fetch product page: ${res.status}`)
+    const html = await res.text()
+
+    // Try JSON-LD first
+    const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+    if (jsonLdMatches) {
+      for (const match of jsonLdMatches) {
+        try {
+          const jsonStr = match.replace(/<script[^>]*>/, "").replace(/<\/script>/, "")
+          const data = JSON.parse(jsonStr)
+          const product = data["@type"] === "Product" ? data : data["@graph"]?.find((item: Record<string, string>) => item["@type"] === "Product")
+          if (product?.image) {
+            const images = Array.isArray(product.image) ? product.image : [product.image]
+            const first = images.find((img: unknown): img is string => typeof img === "string")
+            if (first) return new URL(first, productUrl).href
+          }
+        } catch { /* continue */ }
+      }
+    }
+
+    // Try Open Graph
+    const ogMatch = html.match(/<meta[^>]*(?:property)=["']og:image["'][^>]*content=["']([^"']*)["']/i)
+      || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*(?:property)=["']og:image["']/i)
+    if (ogMatch?.[1]) return new URL(ogMatch[1], productUrl).href
+
+    // Try twitter image
+    const twMatch = html.match(/<meta[^>]*(?:name)=["']twitter:image["'][^>]*content=["']([^"']*)["']/i)
+      || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*(?:name)=["']twitter:image["']/i)
+    if (twMatch?.[1]) return new URL(twMatch[1], productUrl).href
+
+    return null
+  } catch (err) {
+    logWarn(ROUTE_NAME, `Product scrape failed: ${(err as Error).message}`)
+    return null
+  }
+}
+
+async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null> {
+  try {
+    const imageRes = await fetch(imageUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!imageRes.ok) return null
+
+    const blob = await imageRes.blob()
+    const base64 = Buffer.from(await blob.arrayBuffer()).toString("base64")
+    const mimeType = blob.type || "image/jpeg"
+
+    const ai = getGeminiClient()
+    const response = await ai.models.generateContent({
+      model: NANO_BANANA_2,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data: base64 } },
+            {
+              text: "Remove the background from this product image completely. Return ONLY the product on a fully transparent background with clean, precise edges. No shadow, no reflection, no background elements whatsoever. The cutout should look professional and ready to composite onto any background.",
+            },
+          ],
+        },
+      ],
+      config: { responseModalities: ["IMAGE"] },
+    })
+
+    const cutoutBase64 = response.candidates?.[0]?.content?.parts
+      ?.find((p: { inlineData?: { data?: string } }) => p.inlineData)?.inlineData?.data
+    if (!cutoutBase64) return null
+
+    return cutoutBase64 // returns base64 PNG
+  } catch (err) {
+    logWarn(ROUTE_NAME, `Background removal failed: ${(err as Error).message}`)
+    return null
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────
@@ -349,7 +460,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { brief, platform = "ig-feed-square", layout = "center-overlay", contrast = "gradient", callouts = [], imageModel } = body
+  const { brief, platform = "ig-feed-square", layout = "center-overlay", contrast = "gradient", callouts = [], imageModel, bannerColor: reqBannerColor, bannerText: reqBannerText, productUrl = null } = body as PipelineRequest
+  const bannerColor = reqBannerColor || "#D4C96B"
+  const bannerText = reqBannerText || "SUBSCRIBE & SAVE 20%"
 
   if (!brief || typeof brief !== "string" || brief.trim().length < 10) {
     return NextResponse.json({ error: "A brief (string, min 10 chars) is required" }, { status: 400 })
@@ -466,8 +579,7 @@ export async function POST(request: NextRequest) {
     logInfo(ROUTE_NAME, "Step 6: Composing ad")
 
     // Position callouts
-    const calloutTexts = callouts.map((c) => c.text)
-    const positionedCallouts = autoPositionCallouts(calloutTexts, width, height)
+    const positionedCallouts = autoPositionCallouts(callouts, width, height)
 
     // Text position from message zone
     const textX = messageZone.x
@@ -489,7 +601,9 @@ export async function POST(request: NextRequest) {
         positionedCallouts,
         textX,
         textY,
-        maxTextW
+        maxTextW,
+        bannerColor,
+        bannerText
       )
     } catch (canvasErr) {
       logWarn(ROUTE_NAME, `Canvas rendering failed (${(canvasErr as Error).message}), using fallback`)

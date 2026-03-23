@@ -88,6 +88,13 @@ function createDefaultProject(): AdProject {
       supportElements: [],
       customTexts: [],
       callouts: [],
+      banner: {
+        visible: false,
+        color: "#D4C96B",
+        text: "SUBSCRIBE & SAVE 20%",
+        textColor: "#1a1a1a",
+        showStars: true,
+      },
     },
 
     batch: {
@@ -199,6 +206,8 @@ type Action =
   | { type: "DELETE_CALLOUT"; payload: string }
   | { type: "MOVE_CALLOUT"; payload: { id: string; position: { x: number; y: number } } }
   | { type: "MOVE_CALLOUT_ANCHOR"; payload: { id: string; anchorPoint: { x: number; y: number } } }
+  | { type: "UPDATE_BANNER"; payload: Partial<import("../types/ad").BannerConfig> }
+  | { type: "TOGGLE_BANNER" }
   | { type: "TOGGLE_BATCH_IMAGE"; payload: { url: string; aiDescription?: string } }
   | { type: "CLEAR_BATCH_IMAGES" }
   | { type: "TOGGLE_BATCH_COPY"; payload: CopyVariation }
