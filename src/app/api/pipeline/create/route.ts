@@ -51,6 +51,7 @@ interface PipelineRequest {
   backgroundImageDataUrl?: string
   beforeAfterScenes?: Array<{ dirtyImageDataUrl: string; cleanImageDataUrl: string }>
   checklistImages?: Array<{ imageDataUrl: string; label: string }>
+  checklistItems?: string[]
   bannerStyle?: "trustpilot" | "gold"
   socialProofText?: string
   accentColor?: string
@@ -277,7 +278,7 @@ async function renderChecklist(
   width: number,
   height: number,
   headline: string,
-  checklistImages: Array<{ imageDataUrl: string; label: string }>,
+  checklistItems: string[],
   productCutoutBase64: string | null,
   socialProofText: string = "SUBSCRIBE & SAVE 20%",
   bannerStyle: "trustpilot" | "gold" = "trustpilot",
@@ -309,29 +310,29 @@ async function renderChecklist(
   ctx.fillStyle = "#F8F8F8"
   ctx.fillRect(0, 0, width, height)
 
-  // ── 2. Headline zone with dark gradient band ─────────────────
+  // ── 2. Headline with dark gradient band ──────────────────────
   headline = headline.toUpperCase()
   const headlineFontSize = Math.round(width * 0.065)
   ctx.font = `900 ${headlineFontSize}px AdFontBold, AdFont, sans-serif`
 
   // Word-wrap headline
   const maxTextWidth = Math.round(width * 0.92)
-  const words = headline.split(" ")
-  let line = ""
-  const lines: string[] = []
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word
-    if (ctx.measureText(test).width > maxTextWidth && line) {
-      lines.push(line)
-      line = word
+  const hWords = headline.split(" ")
+  let hLine = ""
+  const hLines: string[] = []
+  for (const word of hWords) {
+    const test = hLine ? `${hLine} ${word}` : word
+    if (ctx.measureText(test).width > maxTextWidth && hLine) {
+      hLines.push(hLine)
+      hLine = word
     } else {
-      line = test
+      hLine = test
     }
   }
-  if (line) lines.push(line)
+  if (hLine) hLines.push(hLine)
 
-  const lineHeight = headlineFontSize * 1.15
-  const totalTextH = lines.length * lineHeight
+  const hLineHeight = headlineFontSize * 1.15
+  const hTotalH = hLines.length * hLineHeight
 
   // Dark gradient band
   const gradH = headlineH + Math.round(height * 0.03)
@@ -350,89 +351,45 @@ async function renderChecklist(
   ctx.strokeStyle = "#FFFFFF"
   ctx.lineWidth = Math.round(headlineFontSize * 0.02)
   ctx.lineJoin = "round"
-  const textStartY = Math.round((headlineH - totalTextH) / 2)
-  for (let i = 0; i < lines.length; i++) {
-    const y = textStartY + i * lineHeight
-    ctx.strokeText(lines[i], width / 2, y)
-    ctx.fillText(lines[i], width / 2, y)
+  const hStartY = Math.round((headlineH - hTotalH) / 2)
+  for (let i = 0; i < hLines.length; i++) {
+    const y = hStartY + i * hLineHeight
+    ctx.strokeText(hLines[i], width / 2, y)
+    ctx.fillText(hLines[i], width / 2, y)
   }
 
-  // ── 3. Left column — checklist thumbnails ─────────────────────
-  const thumbDiameter = Math.round(width * 0.18)
-  const thumbRadius = thumbDiameter / 2
-  const colCenterX = Math.round(width * 0.22)
-  const thumbCount = Math.min(checklistImages.length, 4)
-  const labelFontSize = Math.round(width * 0.022)
-  const labelGap = Math.round(height * 0.008)
-  const thumbSpacing = Math.round(contentH / (thumbCount + 0.5))
-  const firstThumbY = contentTop + Math.round(thumbSpacing * 0.4)
+  // ── 3. Left column — text checklist with checkmark bubbles ────
+  const itemCount = Math.min(checklistItems.length, 4)
+  const leftX = Math.round(width * 0.06)
+  const bubbleRadius = Math.round(width * 0.028)
+  const itemFontSize = Math.round(width * 0.038)
+  const textGap = Math.round(width * 0.025) // gap between bubble and text
 
-  for (let i = 0; i < thumbCount; i++) {
-    const cy = firstThumbY + i * thumbSpacing + thumbRadius
-    const cx = colCenterX
+  // Vertically center the checklist rows in content area
+  const rowHeight = Math.round(contentH / (itemCount + 1))
 
-    // Draw circular image
-    try {
-      const match = checklistImages[i].imageDataUrl.match(/^data:image\/[^;]+;base64,(.+)$/)
-      if (match) {
-        const buf = Buffer.from(match[1], "base64")
-        const img = await loadImage(buf)
+  for (let i = 0; i < itemCount; i++) {
+    const rowCenterY = contentTop + rowHeight * (i + 0.75)
 
-        // Cover-fit crop to circle
-        const imgAspect = img.width / img.height
-        let sx = 0, sy = 0, sw = img.width, sh = img.height
-        if (imgAspect > 1) {
-          sw = img.height
-          sx = (img.width - sw) / 2
-        } else {
-          sh = img.width
-          sy = (img.height - sh) / 2
-        }
-
-        ctx.save()
-        ctx.beginPath()
-        ctx.arc(cx, cy, thumbRadius, 0, Math.PI * 2)
-        ctx.clip()
-        ctx.drawImage(img, sx, sy, sw, sh, cx - thumbRadius, cy - thumbRadius, thumbDiameter, thumbDiameter)
-        ctx.restore()
-      }
-    } catch { /* Skip failed image */ }
-
-    // Circle border
+    // Checkmark bubble (filled circle in accent color)
     ctx.beginPath()
-    ctx.arc(cx, cy, thumbRadius, 0, Math.PI * 2)
-    ctx.strokeStyle = accentColor
-    ctx.lineWidth = 3
-    ctx.stroke()
-
-    // Checkmark badge (bottom-right)
-    const badgeSize = Math.round(thumbDiameter * 0.30)
-    const badgeR = badgeSize / 2
-    const badgeX = cx + thumbRadius * 0.65
-    const badgeY = cy + thumbRadius * 0.65
-
-    ctx.beginPath()
-    ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2)
+    ctx.arc(leftX + bubbleRadius, rowCenterY, bubbleRadius, 0, Math.PI * 2)
     ctx.fillStyle = accentColor
     ctx.fill()
-    // White border on badge
-    ctx.strokeStyle = "#FFFFFF"
-    ctx.lineWidth = 2
-    ctx.stroke()
 
-    // Checkmark inside badge
+    // White checkmark inside bubble
     ctx.fillStyle = "#FFFFFF"
-    ctx.font = `bold ${Math.round(badgeSize * 0.6)}px AdFont, sans-serif`
+    ctx.font = `bold ${Math.round(bubbleRadius * 1.2)}px AdFont, sans-serif`
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
-    ctx.fillText("✓", badgeX, badgeY)
+    ctx.fillText("✓", leftX + bubbleRadius, rowCenterY)
 
-    // Label below circle
-    ctx.fillStyle = "#555555"
-    ctx.font = `bold ${labelFontSize}px AdFontBold, AdFont, sans-serif`
-    ctx.textAlign = "center"
-    ctx.textBaseline = "top"
-    ctx.fillText(checklistImages[i].label, cx, cy + thumbRadius + labelGap)
+    // Text label to the right of the bubble
+    ctx.fillStyle = "#2A2A2A"
+    ctx.font = `bold ${itemFontSize}px AdFontBold, AdFont, sans-serif`
+    ctx.textAlign = "left"
+    ctx.textBaseline = "middle"
+    ctx.fillText(checklistItems[i], leftX + bubbleRadius * 2 + textGap, rowCenterY)
   }
 
   // ── 4. Right column — product image ───────────────────────────
@@ -1021,6 +978,7 @@ export async function POST(request: NextRequest) {
   const sceneId = body.sceneId || null
   const beforeAfterScenes = body.beforeAfterScenes || null
   const checklistImages = body.checklistImages || null
+  const checklistItems = body.checklistItems || null
   const bannerStyle = body.bannerStyle || (layout === "before-after-quad" ? "trustpilot" : "gold")
   const socialProofText = body.socialProofText || "SUBSCRIBE & SAVE 20%"
   const accentColor = body.accentColor || "#4AADE0"
@@ -1125,8 +1083,11 @@ export async function POST(request: NextRequest) {
     if (layout === "checklist") {
       logInfo(ROUTE_NAME, "Checklist layout requested")
 
-      if (!checklistImages || checklistImages.length < 1) {
-        return NextResponse.json({ error: "checklist layout requires checklistImages array with at least 1 item" }, { status: 400 })
+      // Accept checklistItems (text callouts) or fall back to checklistImages labels
+      const items: string[] = checklistItems
+        || (checklistImages ? checklistImages.map(ci => ci.label) : [])
+      if (items.length < 1) {
+        return NextResponse.json({ error: "checklist layout requires checklistItems array or checklistImages with labels" }, { status: 400 })
       }
 
       let checklistHeadline: string
@@ -1179,7 +1140,7 @@ export async function POST(request: NextRequest) {
         width,
         height,
         checklistHeadline,
-        checklistImages.slice(0, 4),
+        items.slice(0, 4),
         productCutoutBase64,
         socialProofText,
         bannerStyle === "trustpilot" ? "trustpilot" : "gold",
