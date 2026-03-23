@@ -163,7 +163,7 @@ async function renderAdServerSide(
       const imageData = prodCtx.getImageData(0, 0, targetW, targetH)
       const data = imageData.data
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) {
+        if (data[i] > 220 && data[i + 1] > 220 && data[i + 2] > 220) {
           data[i + 3] = 0
         }
       }
