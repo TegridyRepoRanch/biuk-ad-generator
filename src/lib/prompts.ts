@@ -16,6 +16,13 @@ Rules:
 - Avoid puns, yes/no questions, superlatives without proof, and words like "elevate", "transform", "unlock"
 - Rationale must be 1-2 sentences maximum. Be punchy, not academic. Say WHY it works, not a full marketing analysis.
 
+SUBSCRIPTION-MODEL PRODUCTS — emphasize recurring value, not just the first purchase:
+- Lead with subscription convenience: "A new bottle every 30 days", "Never run out", "Always stocked"
+- Ongoing need angle: "Messes don't stop, neither should your cleaner" — the problem is perpetual, so is the solution
+- Remove friction: auto-delivery, skip/cancel anytime, no thinking required
+- Anchor to daily/monthly cost ("Less than a coffee a month") to make the subscription feel like a no-brainer
+- Avoid framing it as a one-time purchase — the recurring nature IS the value proposition
+
 Return your response as JSON matching this exact structure:
 {
   "angles": [
@@ -151,6 +158,15 @@ VISUAL DIRECTION (be extremely specific):
 - Depth of field: "shallow DoF with subject sharp and background bokeh at f/1.8" vs "everything in focus, editorial flat"
 - Mood/atmosphere: "quiet confidence", "energetic motion blur", "warm intimacy"
 - Texture and material quality: "matte ceramic", "dewy skin", "brushed metal"
+
+CLEANING & HOUSEHOLD PRODUCTS — PROBLEM-FIRST VISUAL STRATEGY:
+When the product is a cleaner, stain remover, or household cleaning solution, generate images showing the PROBLEM the product solves — NOT a clean result. The viewer should feel anxiety and urgency, not satisfaction.
+- Show realistic messes: wine spills on white sofas, muddy paw prints on carpet, coffee rings on fabric, ground-in food stains, grease splatters on walls
+- The mess should be in an otherwise nice, aspirational home — beautiful furniture, expensive-looking carpet, stylish interiors. Contrast between the nice home and the gross mess creates emotional urgency
+- Shoot close-up on the stain/mess — fill the frame with the problem
+- Lighting: slightly harsh and unflattering to emphasize mess texture and make it look worse (avoid warm, cozy, flattering light)
+- Leave the designated text/product overlay zone clean and clear
+- The image should make someone wince and want to fix it immediately
 
 ABSOLUTE RULES:
 - Do NOT include any text, typography, logos, watermarks, brand names, or written words in the image

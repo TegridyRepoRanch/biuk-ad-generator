@@ -43,6 +43,8 @@ interface PipelineRequest {
   productUrl?: string
   bannerColor?: string
   bannerText?: string
+  headlineOverride?: string
+  subheadOverride?: string
 }
 
 interface HeadlineVariation {
@@ -138,18 +140,26 @@ async function renderAdServerSide(
     ctx.fillRect(0, 0, width, height)
   }
 
-  // Draw product cutout (if provided) — centered, ~40% canvas width
+  // Draw product cutout (if provided) — centered, ~55% canvas width
   if (productCutoutBase64) {
     try {
-      const cutoutBuffer = Buffer.from(productCutoutBase64, "base64")
-      const cutoutImg = await loadImage(cutoutBuffer)
-      const targetW = width * 0.4
+      // Prefix with PNG data URI so loadImage always gets a valid PNG
+      const cutoutDataUri = `data:image/png;base64,${productCutoutBase64}`
+      const cutoutImg = await loadImage(cutoutDataUri)
+      const targetW = Math.round(width * 0.55)
       const scale = targetW / cutoutImg.width
-      const targetH = cutoutImg.height * scale
-      const px = (width - targetW) / 2
-      const py = (height - targetH) / 2
+      const targetH = Math.round(cutoutImg.height * scale)
+      const px = Math.round((width - targetW) / 2)
+      // Center vertically in the middle 70% of the canvas
+      // (skip top 15% headline zone and bottom 15% banner zone)
+      const middleZoneTop = Math.round(height * 0.15)
+      const middleZoneH = Math.round(height * 0.70)
+      const py = middleZoneTop + Math.round((middleZoneH - targetH) / 2)
+      ctx.save()
+      ctx.globalCompositeOperation = "source-over"
       ctx.globalAlpha = 1
       ctx.drawImage(cutoutImg, px, py, targetW, targetH)
+      ctx.restore()
     } catch (cutoutErr) {
       // Non-fatal: log and continue
       console.warn("Product cutout compositing failed:", cutoutErr)
@@ -157,13 +167,13 @@ async function renderAdServerSide(
   }
 
   // Draw bottom banner
-  const bannerHeight = Math.round(height * 0.10)
+  const bannerHeight = Math.round(height * 0.12)
   const bannerY = height - bannerHeight
   ctx.fillStyle = bannerColor
   ctx.fillRect(0, bannerY, width, bannerHeight)
 
   // Banner text (stars + text centered)
-  const bannerFontSize = Math.round(width * 0.035)
+  const bannerFontSize = Math.round(width * 0.042)
   const stars = "★★★★★"
   ctx.font = `bold ${bannerFontSize}px AdFont`
   ctx.fillStyle = "#1a1a1a"
@@ -173,7 +183,7 @@ async function renderAdServerSide(
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
   const starsWidth = ctx.measureText(stars).width
-  const gap = Math.round(width * 0.015)
+  const gap = Math.round(width * 0.025)
   const bannerTextWidth = ctx.measureText(bannerText).width
   const totalWidth = starsWidth + gap + bannerTextWidth
   const startX = (width - totalWidth) / 2
@@ -184,15 +194,19 @@ async function renderAdServerSide(
 
   // Font settings — use bundled AdFont (DejaVu Sans)
   const fontFamily = "AdFont"
-  const headlineFontSize = Math.round(width * 0.06)
-  const subheadFontSize = Math.round(width * 0.028)
+  const headlineFontSize = Math.round(width * 0.08)
+  const subheadFontSize = Math.round(width * 0.04)
   const headlineColor = "#FFFFFF"
-  const subheadColor = "#DDDDDD"
-  const headlineWeight = "bold"
+  const subheadColor = "#FFFFFF"
+  const headlineWeight = "900"
+
+  // Force headline ALL CAPS
+  headline = headline.toUpperCase()
 
   // Headline renders at the top (~5% from top)
   const topY = Math.round(height * 0.05)
   const headlineCenterX = width / 2
+  const headlineMaxWidth = Math.round(width * 0.90)
 
   // Word-wrap headline (centered)
   ctx.font = `${headlineWeight} ${headlineFontSize}px ${fontFamily}`
@@ -201,7 +215,7 @@ async function renderAdServerSide(
   const lines: string[] = []
   for (const word of words) {
     const test = line ? `${line} ${word}` : word
-    if (ctx.measureText(test).width > maxTextWidth && line) {
+    if (ctx.measureText(test).width > headlineMaxWidth && line) {
       lines.push(line)
       line = word
     } else {
@@ -210,18 +224,13 @@ async function renderAdServerSide(
   }
   if (line) lines.push(line)
 
-  // Measure total headline block height
-  const headlineBlockHeight = lines.length * headlineFontSize * 1.15
-  const subheadBlockHeight = subhead ? (subheadFontSize * 1.15 + 8) : 0
-  const backdropPad = 16
-  const backdropH = headlineBlockHeight + subheadBlockHeight + backdropPad * 2
-  ctx.fillStyle = "rgba(0,0,0,0.45)"
-  ctx.fillRect(
-    headlineCenterX - maxTextWidth / 2 - backdropPad,
-    topY - backdropPad,
-    maxTextWidth + backdropPad * 2,
-    backdropH
-  )
+  // Draw dark gradient strip across top ~18% of image (natural, not a box)
+  const gradStripH = Math.round(height * 0.18)
+  const topGrad = ctx.createLinearGradient(0, 0, 0, gradStripH)
+  topGrad.addColorStop(0, "rgba(0,0,0,0.7)")
+  topGrad.addColorStop(1, "rgba(0,0,0,0)")
+  ctx.fillStyle = topGrad
+  ctx.fillRect(0, 0, width, gradStripH)
 
   // Draw headline lines (centered)
   ctx.font = `${headlineWeight} ${headlineFontSize}px ${fontFamily}`
@@ -254,10 +263,10 @@ async function renderAdServerSide(
 
   // Draw callouts
   for (const callout of callouts) {
-    const fontSize = Math.round(width * 0.025)
-    const padX = 12
-    const padY = 8
-    const dotR = 6
+    const fontSize = Math.round(width * 0.032)
+    const padX = 20
+    const padY = 14
+    const dotR = Math.max(Math.round(width * 0.008), 5)
     const lineW = 2
     const borderR = 8
 
@@ -307,7 +316,7 @@ async function renderAdServerSide(
     ctx.fill()
 
     // Bubble
-    ctx.fillStyle = "rgba(0,0,0,0.75)"
+    ctx.fillStyle = "rgba(0,0,0,0.85)"
     ctx.shadowColor = "rgba(0,0,0,0.15)"
     ctx.shadowBlur = 6
     ctx.shadowOffsetY = 2
@@ -389,6 +398,11 @@ async function scrapeProductHeroImage(productUrl: string): Promise<string | null
     if (!res.ok) throw new Error(`Failed to fetch product page: ${res.status}`)
     const html = await res.text()
 
+    // Helper: upgrade Shopify thumbnail URLs to full-res
+    function upgradeShopifyImageUrl(url: string): string {
+      return url.replace(/_(200x|300x|400x|500x|600x|700x|800x)(\.[a-z]+)(\?|$)/i, "_1200x$2$3")
+    }
+
     // Try JSON-LD first
     const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
     if (jsonLdMatches) {
@@ -400,7 +414,7 @@ async function scrapeProductHeroImage(productUrl: string): Promise<string | null
           if (product?.image) {
             const images = Array.isArray(product.image) ? product.image : [product.image]
             const first = images.find((img: unknown): img is string => typeof img === "string")
-            if (first) return new URL(first, productUrl).href
+            if (first) return upgradeShopifyImageUrl(new URL(first, productUrl).href)
           }
         } catch { /* continue */ }
       }
@@ -409,12 +423,12 @@ async function scrapeProductHeroImage(productUrl: string): Promise<string | null
     // Try Open Graph
     const ogMatch = html.match(/<meta[^>]*(?:property)=["']og:image["'][^>]*content=["']([^"']*)["']/i)
       || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*(?:property)=["']og:image["']/i)
-    if (ogMatch?.[1]) return new URL(ogMatch[1], productUrl).href
+    if (ogMatch?.[1]) return upgradeShopifyImageUrl(new URL(ogMatch[1], productUrl).href)
 
     // Try twitter image
     const twMatch = html.match(/<meta[^>]*(?:name)=["']twitter:image["'][^>]*content=["']([^"']*)["']/i)
       || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*(?:name)=["']twitter:image["']/i)
-    if (twMatch?.[1]) return new URL(twMatch[1], productUrl).href
+    if (twMatch?.[1]) return upgradeShopifyImageUrl(new URL(twMatch[1], productUrl).href)
 
     return null
   } catch (err) {
@@ -444,7 +458,7 @@ async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null>
           parts: [
             { inlineData: { mimeType, data: base64 } },
             {
-              text: "Remove the background from this product image completely. Return ONLY the product on a fully transparent background with clean, precise edges. No shadow, no reflection, no background elements whatsoever. The cutout should look professional and ready to composite onto any background.",
+              text: "Remove the background completely from this product image. Return ONLY the product on a transparent background. The background should be completely transparent/removed. No checkerboard, no white fill, no shadow — pure transparency everywhere that is not the product itself. Clean, precise edges.",
             },
           ],
         },
@@ -482,6 +496,8 @@ export async function POST(request: NextRequest) {
   const { brief, platform = "ig-feed-square", layout = "center-overlay", contrast = "gradient", callouts = [], imageModel, bannerColor: reqBannerColor, bannerText: reqBannerText, productUrl = null } = body as PipelineRequest
   const bannerColor = reqBannerColor || "#D4C96B"
   const bannerText = reqBannerText || "SUBSCRIBE & SAVE 20%"
+  const headlineOverride = body.headlineOverride || null
+  const subheadOverride = body.subheadOverride || null
 
   if (!brief || typeof brief !== "string" || brief.trim().length < 10) {
     return NextResponse.json({ error: "A brief (string, min 10 chars) is required" }, { status: 400 })
@@ -577,21 +593,37 @@ export async function POST(request: NextRequest) {
     )
     logInfo(ROUTE_NAME, "Step 4 done")
 
-    // ── STEP 5: Generate headlines ────────────────────────────────
-    logInfo(ROUTE_NAME, "Step 5: Generating headlines")
-    const copyUserPrompt = buildCopyUserPrompt(
-      selectedConcept,
-      imageDescription,
-      messageZonePosition,
-      contrast
-    )
-    const copyRaw = await generateText(GEMINI_PRO, COPY_SYSTEM_PROMPT, copyUserPrompt, 30_000)
-    const copyData = extractJSON<{ variations: HeadlineVariation[] }>(copyRaw)
-    const headlines = copyData.variations ?? []
-    if (headlines.length === 0) {
-      return NextResponse.json({ error: "Failed to generate headlines" }, { status: 502 })
+    // ── STEP 5: Generate headlines (skip if override provided) ────
+    let headlines: HeadlineVariation[]
+    let selectedHeadline: HeadlineVariation
+
+    if (headlineOverride) {
+      logInfo(ROUTE_NAME, "Step 5: Using headline override — skipping copy generation")
+      const overrideVariation: HeadlineVariation = {
+        id: uuid(),
+        headline: headlineOverride,
+        subhead: subheadOverride ?? null,
+        cta: "SHOP NOW",
+        hookMechanism: "override",
+      }
+      headlines = [overrideVariation]
+      selectedHeadline = overrideVariation
+    } else {
+      logInfo(ROUTE_NAME, "Step 5: Generating headlines")
+      const copyUserPrompt = buildCopyUserPrompt(
+        selectedConcept,
+        imageDescription,
+        messageZonePosition,
+        contrast
+      )
+      const copyRaw = await generateText(GEMINI_PRO, COPY_SYSTEM_PROMPT, copyUserPrompt, 30_000)
+      const copyData = extractJSON<{ variations: HeadlineVariation[] }>(copyRaw)
+      headlines = copyData.variations ?? []
+      if (headlines.length === 0) {
+        return NextResponse.json({ error: "Failed to generate headlines" }, { status: 502 })
+      }
+      selectedHeadline = headlines[0]
     }
-    const selectedHeadline = headlines[0]
     logInfo(ROUTE_NAME, "Step 5 done")
 
     // ── STEP 5.5: Scrape product image + remove background (optional) ────
@@ -635,8 +667,8 @@ export async function POST(request: NextRequest) {
         imageBase64,
         width,
         height,
-        selectedHeadline.headline,
-        selectedHeadline.subhead,
+        headlineOverride ?? selectedHeadline.headline,
+        subheadOverride ?? selectedHeadline.subhead,
         selectedHeadline.cta,
         contrast,
         positionedCallouts,
@@ -668,8 +700,8 @@ export async function POST(request: NextRequest) {
         {
           imageDataUrl: finalImageDataUrl,
           label: useSimpleFallback ? "Ad (raw image — compose client-side)" : "Ad",
-          headline: selectedHeadline.headline,
-          subhead: selectedHeadline.subhead,
+          headline: headlineOverride ?? selectedHeadline.headline,
+          subhead: subheadOverride ?? selectedHeadline.subhead,
           cta: selectedHeadline.cta,
           callouts: positionedCallouts,
         },
