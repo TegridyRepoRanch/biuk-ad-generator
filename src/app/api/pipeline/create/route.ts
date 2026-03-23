@@ -156,23 +156,13 @@ async function renderAdServerSide(
       const middleZoneH = Math.round(height * 0.70)
       const py = middleZoneTop + Math.round((middleZoneH - targetH) / 2)
 
-      // Remove white/near-white background from product image
-      const prodCanvas = createCanvas(targetW, targetH)
-      const prodCtx = prodCanvas.getContext("2d")
-      prodCtx.drawImage(cutoutImg, 0, 0, targetW, targetH)
-      const imageData = prodCtx.getImageData(0, 0, targetW, targetH)
-      const data = imageData.data
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i] > 220 && data[i + 1] > 220 && data[i + 2] > 220) {
-          data[i + 3] = 0
-        }
-      }
-      prodCtx.putImageData(imageData, 0, 0)
-
+      // Draw product with drop shadow for depth
       ctx.save()
-      ctx.globalCompositeOperation = "source-over"
-      ctx.globalAlpha = 1
-      ctx.drawImage(prodCanvas, px, py, targetW, targetH)
+      ctx.shadowColor = "rgba(0,0,0,0.4)"
+      ctx.shadowBlur = 20
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 10
+      ctx.drawImage(cutoutImg, px, py, targetW, targetH)
       ctx.restore()
     } catch (cutoutErr) {
       // Non-fatal: log and continue
@@ -256,9 +246,9 @@ async function renderAdServerSide(
   ctx.fillStyle = headlineColor
   ctx.textAlign = "center"
   ctx.textBaseline = "top"
-  ctx.shadowColor = "rgba(0,0,0,0.6)"
-  ctx.shadowBlur = 8
-  ctx.shadowOffsetY = 2
+  ctx.shadowColor = "transparent"
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
 
   let ty = topY
   for (const l of lines) {
@@ -565,7 +555,8 @@ export async function POST(request: NextRequest) {
     }
     // Pick rank 1 (or fallback to first)
     const bestPrompt = imagePrompts.find((p) => p.rank === 1) ?? imagePrompts[0]
-    const imagePromptText = bestPrompt.text
+    let imagePromptText = bestPrompt.text
+    imagePromptText += ". Photorealistic, shot on Canon EOS R5, 35mm lens, natural lighting. 4K resolution, ultra detailed textures. No text, no watermarks, no artifacts."
     logInfo(ROUTE_NAME, "Step 2 done")
 
     // ── STEP 3: Generate image ────────────────────────────────────
