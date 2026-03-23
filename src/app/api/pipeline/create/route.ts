@@ -47,6 +47,8 @@ interface PipelineRequest {
   headlineOverride?: string
   subheadOverride?: string
   imagePromptOverride?: string
+  sceneId?: string
+  backgroundImageDataUrl?: string
 }
 
 interface HeadlineVariation {
@@ -594,6 +596,8 @@ export async function POST(request: NextRequest) {
   const headlineOverride = body.headlineOverride || null
   const subheadOverride = body.subheadOverride || null
   const imagePromptOverride = body.imagePromptOverride || null
+  const backgroundImageDataUrl = body.backgroundImageDataUrl || null
+  const sceneId = body.sceneId || null
 
   if (!brief || typeof brief !== "string" || brief.trim().length < 10) {
     return NextResponse.json({ error: "A brief (string, min 10 chars) is required" }, { status: 400 })
@@ -673,33 +677,46 @@ export async function POST(request: NextRequest) {
     logInfo(ROUTE_NAME, "Step 2 done")
 
     // ── STEP 3: Generate image ────────────────────────────────────
-    logInfo(ROUTE_NAME, "Step 3: Generating image")
-    const activeImageModel = imageModel ?? "gemini-3-pro-image-preview"
-    const ai = getGeminiClient()
-
-    const imageResponse = await ai.models.generateContent({
-      model: activeImageModel,
-      contents: [{ role: "user", parts: [{ text: imagePromptText }] }],
-      config: { responseModalities: ["IMAGE", "TEXT"] },
-    })
-
-    const imageParts = imageResponse.candidates?.[0]?.content?.parts
-    if (!imageParts) {
-      return NextResponse.json({ error: "Image generation returned no response" }, { status: 502 })
-    }
-
     let imageBase64: string | null = null
     let imageMimeType = "image/png"
-    for (const part of imageParts) {
-      if (part.inlineData) {
-        imageBase64 = part.inlineData.data ?? null
-        imageMimeType = part.inlineData.mimeType ?? "image/png"
-        break
-      }
-    }
 
-    if (!imageBase64) {
-      return NextResponse.json({ error: "Image model did not return an image" }, { status: 422 })
+    if (backgroundImageDataUrl) {
+      // Pre-generated background — skip Gemini image generation
+      const match = backgroundImageDataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/)
+      if (!match) {
+        return NextResponse.json({ error: "Invalid backgroundImageDataUrl format" }, { status: 400 })
+      }
+      imageMimeType = match[1]
+      imageBase64 = match[2]
+      if (sceneId) logInfo(ROUTE_NAME, `Step 3: Using pre-generated background (sceneId: ${sceneId})`)
+      else logInfo(ROUTE_NAME, "Step 3: Using pre-generated background image")
+    } else {
+      logInfo(ROUTE_NAME, "Step 3: Generating image")
+      const activeImageModel = imageModel ?? "gemini-3-pro-image-preview"
+      const ai = getGeminiClient()
+
+      const imageResponse = await ai.models.generateContent({
+        model: activeImageModel,
+        contents: [{ role: "user", parts: [{ text: imagePromptText }] }],
+        config: { responseModalities: ["IMAGE", "TEXT"] },
+      })
+
+      const imageParts = imageResponse.candidates?.[0]?.content?.parts
+      if (!imageParts) {
+        return NextResponse.json({ error: "Image generation returned no response" }, { status: 502 })
+      }
+
+      for (const part of imageParts) {
+        if (part.inlineData) {
+          imageBase64 = part.inlineData.data ?? null
+          imageMimeType = part.inlineData.mimeType ?? "image/png"
+          break
+        }
+      }
+
+      if (!imageBase64) {
+        return NextResponse.json({ error: "Image model did not return an image" }, { status: 422 })
+      }
     }
     const generatedImageUrl = `data:${imageMimeType};base64,${imageBase64}`
     logInfo(ROUTE_NAME, "Step 3 done")
