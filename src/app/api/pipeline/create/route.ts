@@ -52,6 +52,7 @@ interface PipelineRequest {
   beforeAfterScenes?: Array<{ dirtyImageDataUrl: string; cleanImageDataUrl: string }>
   bannerStyle?: "trustpilot" | "gold"
   socialProofText?: string
+  accentColor?: string
 }
 
 interface HeadlineVariation {
@@ -88,8 +89,9 @@ async function renderBeforeAfterQuad(
   headline: string,
   beforeAfterScenes: Array<{ dirtyImageDataUrl: string; cleanImageDataUrl: string }>,
   productCutoutBase64: string | null,
-  socialProofText: string = "100,000+ Happy Customers",
-  bannerStyle: "trustpilot" | "gold" = "trustpilot"
+  socialProofText: string = "SUBSCRIBE & SAVE 20%",
+  bannerStyle: "trustpilot" | "gold" = "trustpilot",
+  accentColor: string = "#4AADE0",
 ): Promise<string> {
   const { createCanvas, loadImage, GlobalFonts } = await import("@napi-rs/canvas")
   const path = await import("path")
@@ -106,57 +108,16 @@ async function renderBeforeAfterQuad(
   const canvas = createCanvas(width, height)
   const ctx = canvas.getContext("2d")
 
-  const headerH = Math.round(height * 0.22)
-  const bannerH = Math.round(height * 0.13)
-  const gridH = height - headerH - bannerH
-  const gridY = headerH
+  // ── Zone dimensions ───────────────────────────────────────────
+  // No separate header — images go edge-to-edge, headline overlaid on top
+  const bannerH = Math.round(height * 0.09)
   const bannerY = height - bannerH
-  const gridGap = Math.round(width * 0.004)
+  const gridH = height - bannerH
+  const gridGap = Math.round(width * 0.005)
   const cellW = Math.round((width - gridGap) / 2)
   const cellH = Math.round((gridH - gridGap) / 2)
 
-  ctx.fillStyle = "#FFF8F0"
-  ctx.fillRect(0, 0, width, headerH)
-
-  headline = headline.toUpperCase()
-  const headlineFontSize = Math.round(width * 0.088)
-  ctx.font = `900 ${headlineFontSize}px AdFontBold, AdFont, sans-serif`
-  ctx.fillStyle = "#0A0A0A"
-  ctx.textAlign = "center"
-  ctx.textBaseline = "top"
-
-  const maxTextWidth = Math.round(width * 0.92)
-  const words = headline.split(" ")
-  let line = ""
-  const lines: string[] = []
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word
-    if (ctx.measureText(test).width > maxTextWidth && line) {
-      lines.push(line)
-      line = word
-    } else {
-      line = test
-    }
-  }
-  if (line) lines.push(line)
-
-  const lineHeight = headlineFontSize * 1.05
-  const totalTextH = lines.length * lineHeight
-  const textStartY = Math.round((headerH - totalTextH) / 2)
-  for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], width / 2, textStartY + i * lineHeight)
-  }
-
-  ctx.strokeStyle = "#D0D0D0"
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(0, headerH - 1)
-  ctx.lineTo(width, headerH - 1)
-  ctx.stroke()
-
-  ctx.fillStyle = "#FFFFFF"
-  ctx.fillRect(0, gridY, width, gridH)
-
+  // ── Helper: draw image with cover fit ─────────────────────────
   async function drawCoverImage(dataUrl: string, dx: number, dy: number, dw: number, dh: number) {
     const match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/)
     if (!match) return
@@ -175,28 +136,86 @@ async function renderBeforeAfterQuad(
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
   }
 
+  // ── Fill background (visible as grid gap color) ───────────────
+  ctx.fillStyle = "#FFFFFF"
+  ctx.fillRect(0, 0, width, height)
+
+  // ── 1. Image grid (edge-to-edge, top to banner) ──────────────
   const scene1 = beforeAfterScenes[0]
   const scene2 = beforeAfterScenes.length > 1 ? beforeAfterScenes[1] : beforeAfterScenes[0]
 
-  await drawCoverImage(scene1.dirtyImageDataUrl, 0, gridY, cellW, cellH)
-  await drawCoverImage(scene1.cleanImageDataUrl, cellW + gridGap, gridY, cellW, cellH)
-  await drawCoverImage(scene2.dirtyImageDataUrl, 0, gridY + cellH + gridGap, cellW, cellH)
-  await drawCoverImage(scene2.cleanImageDataUrl, cellW + gridGap, gridY + cellH + gridGap, cellW, cellH)
+  await drawCoverImage(scene1.dirtyImageDataUrl, 0, 0, cellW, cellH)
+  await drawCoverImage(scene1.cleanImageDataUrl, cellW + gridGap, 0, cellW, cellH)
+  await drawCoverImage(scene2.dirtyImageDataUrl, 0, cellH + gridGap, cellW, cellH)
+  await drawCoverImage(scene2.cleanImageDataUrl, cellW + gridGap, cellH + gridGap, cellW, cellH)
 
+  // ── 2. Headline with smooth dark gradient behind it ───────────
+  headline = headline.toUpperCase()
+  const headlineFontSize = Math.round(width * 0.095)
+  ctx.font = `900 ${headlineFontSize}px AdFontBold, AdFont, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+
+  // Word-wrap headline
+  const maxTextWidth = Math.round(width * 0.92)
+  const words = headline.split(" ")
+  let line = ""
+  const lines: string[] = []
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word
+    if (ctx.measureText(test).width > maxTextWidth && line) {
+      lines.push(line)
+      line = word
+    } else {
+      line = test
+    }
+  }
+  if (line) lines.push(line)
+
+  const lineHeight = headlineFontSize * 1.15
+  const totalTextH = lines.length * lineHeight
+  const textPadTop = Math.round(height * 0.03)
+  const gradientBottom = textPadTop + totalTextH + Math.round(height * 0.05)
+
+  // Smooth dark gradient fade — dark at top, transparent below text
+  const headGrad = ctx.createLinearGradient(0, 0, 0, gradientBottom)
+  headGrad.addColorStop(0, "rgba(0,0,0,0.70)")
+  headGrad.addColorStop(0.7, "rgba(0,0,0,0.35)")
+  headGrad.addColorStop(1, "rgba(0,0,0,0)")
+  ctx.fillStyle = headGrad
+  ctx.fillRect(0, 0, width, gradientBottom)
+
+  // Draw headline text (white, bold, with subtle text shadow)
+  ctx.fillStyle = "#FFFFFF"
+  ctx.font = `900 ${headlineFontSize}px AdFontBold, AdFont, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  // Faux extra-bold: stroke behind fill for thickness
+  ctx.strokeStyle = "#FFFFFF"
+  ctx.lineWidth = Math.round(headlineFontSize * 0.03)
+  ctx.lineJoin = "round"
+  for (let i = 0; i < lines.length; i++) {
+    const y = textPadTop + i * lineHeight
+    ctx.strokeText(lines[i], width / 2, y)
+    ctx.fillText(lines[i], width / 2, y)
+  }
+
+  // ── 3. Product overlay (centered at grid intersection) ────────
   if (productCutoutBase64) {
     try {
       const cutoutBuf = Buffer.from(productCutoutBase64, "base64")
       const cutoutImg = await loadImage(cutoutBuf)
-      const targetH = Math.round(height * 0.45)
+      const targetH = Math.round(height * 0.50)
       const scale = targetH / cutoutImg.height
       const targetW = Math.round(cutoutImg.width * scale)
       const px = Math.round((width - targetW) / 2)
-      const py = Math.round(gridY + (gridH - targetH) / 2)
+      // Center vertically in the grid area (offset slightly down from pure center)
+      const py = Math.round((gridH - targetH) / 2) + Math.round(height * 0.03)
       ctx.save()
-      ctx.shadowColor = "rgba(0,0,0,0.3)"
-      ctx.shadowBlur = 20
+      ctx.shadowColor = "rgba(0,0,0,0.35)"
+      ctx.shadowBlur = 25
       ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 5
+      ctx.shadowOffsetY = 8
       ctx.drawImage(cutoutImg, px, py, targetW, targetH)
       ctx.restore()
     } catch (err) {
@@ -204,40 +223,39 @@ async function renderBeforeAfterQuad(
     }
   }
 
+  // ── 4. Bottom banner (accent color, white stars + text) ───────
   if (bannerStyle === "trustpilot") {
-    ctx.fillStyle = "#1A1A1A"
+    // Accent color banner
+    ctx.fillStyle = accentColor
     ctx.fillRect(0, bannerY, width, bannerH)
 
-    const starBoxSize = Math.round(bannerH * 0.35)
-    const starGap = Math.round(starBoxSize * 0.08)
-    const starCount = 5
-    const starsWidth = starCount * starBoxSize + (starCount - 1) * starGap
-    const socialFontSize = Math.round(width * 0.038)
-    ctx.font = `italic 500 ${socialFontSize}px AdFont, sans-serif`
-    const socialTextWidth = ctx.measureText(socialProofText).width
-    const totalBannerContent = starsWidth + Math.round(width * 0.03) + socialTextWidth
-    const bannerStartX = Math.round((width - totalBannerContent) / 2)
-    const bannerCenterY = bannerY + Math.round(bannerH / 2)
-
-    for (let i = 0; i < starCount; i++) {
-      const bx = bannerStartX + i * (starBoxSize + starGap)
-      const by = bannerCenterY - Math.round(starBoxSize / 2)
-      ctx.fillStyle = "#00B67A"
-      ctx.fillRect(bx, by, starBoxSize, starBoxSize)
-      ctx.fillStyle = "#FFFFFF"
-      ctx.font = `bold ${Math.round(starBoxSize * 0.6)}px AdFont`
-      ctx.textAlign = "center"
-      ctx.textBaseline = "middle"
-      ctx.fillText("\u2605", bx + starBoxSize / 2, by + starBoxSize / 2)
-    }
-
+    // White stars (no boxes — flat white star characters)
+    const stars = "★★★★★"
+    const starFontSize = Math.round(bannerH * 0.45)
+    const bannerFontSize = Math.round(bannerH * 0.40)
+    ctx.font = `bold ${starFontSize}px AdFont, sans-serif`
     ctx.fillStyle = "#FFFFFF"
-    ctx.font = `italic 500 ${socialFontSize}px AdFont, sans-serif`
-    ctx.textAlign = "left"
+    ctx.textAlign = "center"
     ctx.textBaseline = "middle"
-    const textX = bannerStartX + starsWidth + Math.round(width * 0.03)
-    ctx.fillText(socialProofText, textX, bannerCenterY)
+
+    const starsWidth = ctx.measureText(stars).width
+    const gap = Math.round(width * 0.025)
+    ctx.font = `bold ${bannerFontSize}px AdFontBold, AdFont, sans-serif`
+    const textWidth = ctx.measureText(socialProofText).width
+    const totalW = starsWidth + gap + textWidth
+    const startX = (width - totalW) / 2
+    const centerY = bannerY + bannerH / 2
+
+    // Stars
+    ctx.font = `bold ${starFontSize}px AdFont, sans-serif`
+    ctx.textAlign = "left"
+    ctx.fillText(stars, startX, centerY)
+
+    // Text
+    ctx.font = `bold ${bannerFontSize}px AdFontBold, AdFont, sans-serif`
+    ctx.fillText(socialProofText, startX + starsWidth + gap, centerY)
   } else {
+    // Gold banner (existing style)
     ctx.fillStyle = "#D4C96B"
     ctx.fillRect(0, bannerY, width, bannerH)
     const bannerFontSize = Math.round(width * 0.04)
@@ -245,7 +263,7 @@ async function renderBeforeAfterQuad(
     ctx.fillStyle = "#1a1a1a"
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
-    ctx.fillText(socialProofText, width / 2, bannerY + bannerH / 2)
+    ctx.fillText(`★★★★★  ${socialProofText}`, width / 2, bannerY + bannerH / 2)
   }
 
   const pngBuffer = canvas.toBuffer("image/png")
@@ -773,7 +791,8 @@ export async function POST(request: NextRequest) {
   const sceneId = body.sceneId || null
   const beforeAfterScenes = body.beforeAfterScenes || null
   const bannerStyle = body.bannerStyle || (layout === "before-after-quad" ? "trustpilot" : "gold")
-  const socialProofText = body.socialProofText || "100,000+ Happy Customers"
+  const socialProofText = body.socialProofText || "SUBSCRIBE & SAVE 20%"
+  const accentColor = body.accentColor || "#4AADE0"
 
   if (layout !== "before-after-quad" && (!brief || typeof brief !== "string" || brief.trim().length < 10)) {
     return NextResponse.json({ error: "A brief (string, min 10 chars) is required" }, { status: 400 })
@@ -845,7 +864,8 @@ export async function POST(request: NextRequest) {
         beforeAfterScenes,
         productCutoutBase64,
         socialProofText,
-        bannerStyle === "trustpilot" ? "trustpilot" : "gold"
+        bannerStyle === "trustpilot" ? "trustpilot" : "gold",
+        accentColor,
       )
 
       logInfo(ROUTE_NAME, "Before-After-Quad: Done")
