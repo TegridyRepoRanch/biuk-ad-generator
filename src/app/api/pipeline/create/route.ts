@@ -46,6 +46,7 @@ interface PipelineRequest {
   bannerText?: string
   headlineOverride?: string
   subheadOverride?: string
+  imagePromptOverride?: string
 }
 
 interface HeadlineVariation {
@@ -600,6 +601,7 @@ export async function POST(request: NextRequest) {
   const bannerText = reqBannerText || "SUBSCRIBE & SAVE 20%"
   const headlineOverride = body.headlineOverride || null
   const subheadOverride = body.subheadOverride || null
+  const imagePromptOverride = body.imagePromptOverride || null
 
   if (!brief || typeof brief !== "string" || brief.trim().length < 10) {
     return NextResponse.json({ error: "A brief (string, min 10 chars) is required" }, { status: 400 })
@@ -646,7 +648,12 @@ export async function POST(request: NextRequest) {
     logInfo(ROUTE_NAME, "Step 2: Building image prompt")
     let imagePromptText: string
 
-    if (productIntel) {
+    if (imagePromptOverride) {
+      // Direct image prompt override — highest priority
+      const aspectRatio = width === height ? "1:1" : `${width}:${height}`
+      imagePromptText = buildPhotographyPrompt(imagePromptOverride, aspectRatio)
+      logInfo(ROUTE_NAME, `Step 2: Using image prompt override`)
+    } else if (productIntel) {
       // Product Intelligence path: Scene DNA + Photography Spec
       const scene = selectScene(productIntel)
       const aspectRatio = width === height ? "1:1" : `${width}:${height}`
