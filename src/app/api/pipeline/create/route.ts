@@ -132,14 +132,7 @@ async function renderAdServerSide(
   }
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height)
 
-  // Draw subtle bottom gradient (just enough for banner readability)
-  if (contrastMethod === "gradient" || contrastMethod === "gradient-overlay") {
-    const grad = ctx.createLinearGradient(0, height, 0, height * 0.75)
-    grad.addColorStop(0, "rgba(0,0,0,0.4)")
-    grad.addColorStop(1, "rgba(0,0,0,0)")
-    ctx.fillStyle = grad
-    ctx.fillRect(0, Math.round(height * 0.75), width, Math.round(height * 0.25))
-  }
+  // No bottom gradient — the gold banner handles contrast at bottom
 
   // Draw product cutout (if provided) — centered, ~55% canvas width
   if (productCutoutBase64) {
@@ -240,11 +233,11 @@ async function renderAdServerSide(
   const headlineBlockH = lines.length * headlineFontSize * 1.15
   const subheadBlockH = subhead ? (8 + subheadFontSize * 1.15) : 0
   const textBlockBottom = topY + headlineBlockH + subheadBlockH + Math.round(height * 0.02)
-  // Gradient covers from top to at least the bottom of all text, minimum 18%
-  const gradStripH = Math.max(Math.round(height * 0.28), textBlockBottom + 20)
+  // Tight gradient — only covers headline text area, darker but short
+  const gradStripH = textBlockBottom + 10
   const topGrad = ctx.createLinearGradient(0, 0, 0, gradStripH)
-  topGrad.addColorStop(0, "rgba(0,0,0,0.55)")
-  topGrad.addColorStop(0.6, "rgba(0,0,0,0.2)")
+  topGrad.addColorStop(0, "rgba(0,0,0,0.7)")
+  topGrad.addColorStop(0.85, "rgba(0,0,0,0.3)")
   topGrad.addColorStop(1, "rgba(0,0,0,0)")
   ctx.fillStyle = topGrad
   ctx.fillRect(0, 0, width, gradStripH)
@@ -382,13 +375,13 @@ function autoPositionCallouts(
   // Corner positions for callout bubbles (X-pattern radiating from product center)
   const positions = [
     // top-left: pushed out left, vertically at 32%
-    { bx: width * 0.01, by: height * 0.32, ax: width * 0.35, ay: height * 0.40 },
-    // top-right: pushed out right, vertically at 32%
-    { bx: width * 0.68, by: height * 0.32, ax: width * 0.65, ay: height * 0.40 },
-    // bottom-left: pushed out left, vertically at 58%
-    { bx: width * 0.01, by: height * 0.58, ax: width * 0.35, ay: height * 0.58 },
-    // bottom-right: pushed out right, vertically at 58%
-    { bx: width * 0.68, by: height * 0.58, ax: width * 0.65, ay: height * 0.58 },
+    { bx: width * 0.01, by: height * 0.32, ax: width * 0.42, ay: height * 0.40 },
+    // top-right: anchor lands on product right side
+    { bx: width * 0.68, by: height * 0.32, ax: width * 0.58, ay: height * 0.40 },
+    // bottom-left: anchor lands on product left side
+    { bx: width * 0.01, by: height * 0.58, ax: width * 0.42, ay: height * 0.56 },
+    // bottom-right: anchor lands on product right side
+    { bx: width * 0.68, by: height * 0.58, ax: width * 0.58, ay: height * 0.56 },
   ]
 
   return calloutInputs.map((callout, i) => {

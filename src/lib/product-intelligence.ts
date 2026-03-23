@@ -73,7 +73,7 @@ export const SCENE_DNA: Record<string, string[]> = {
 // Wraps around scene DNA to ensure consistent photorealistic quality
 
 export function buildPhotographyPrompt(scene: string, aspectRatio: string = "1:1"): string {
-  return `${scene}. Shot on a Canon EOS R5 with a 35mm f/1.4L lens at ISO 400. Shallow depth of field with the main subject tack-sharp and background elements softly blurred. Natural available light with slight directional side-lighting from camera-left creating texture and dimension. The scene fills the entire frame edge-to-edge with no empty space, no borders, no vignette. Ultra photorealistic photograph at 4K resolution. Raw, unedited look — not overly saturated or processed. No text, no logos, no watermarks, no typography, no UI elements. Aspect ratio ${aspectRatio}.`
+  return `${scene}. Simple clean composition, not busy or cluttered. Bright natural daylight, well-lit and airy. Shot on a Canon EOS R5 with a 35mm f/1.4L lens. Shallow depth of field, soft blurred background. Ultra photorealistic photograph, 4K resolution. Clean and minimal — no clutter, no distracting objects, no dark moody lighting. No text, no logos, no watermarks. Aspect ratio ${aspectRatio}.`
 }
 
 // ── Product Intelligence Types ────────────────────────────────────
