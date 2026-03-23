@@ -201,7 +201,7 @@ async function renderAdServerSide(
 
   // Font settings — use bundled AdFont (DejaVu Sans)
   const fontFamily = "AdFont"
-  const headlineFontSize = Math.round(width * 0.095)
+  const headlineFontSize = Math.round(width * 0.082)
   const subheadFontSize = Math.round(width * 0.04)
   const headlineColor = "#FFFFFF"
   const subheadColor = "#FFFFFF"
