@@ -8,14 +8,14 @@ import { GEMINI_FLASH } from "@/lib/gemini"
 
 export const SCENE_DNA: Record<string, string[]> = {
   "carpet-fabric-cleaner": [
-    "A glass of red wine tipping over onto a beautiful cream-colored velvet sofa in a stylish modern living room, the wine just starting to spill — that heart-stopping moment",
-    "A fresh coffee spill on the passenger seat of a luxury car interior, dark leather dashboard and steering wheel visible, coffee cup lid popped off",
-    "A toddler's sticky handprints and a knocked-over juice cup on a pristine white fabric armchair in a bright, airy nursery",
-    "Muddy paw prints from a golden retriever tracked across an expensive-looking cream wool rug in a beautifully decorated living room with mid-century furniture",
-    "A large dark stain spreading into the fabric of an elegant tufted dining chair at a dinner party setting with candles and wine glasses on the table",
-    "Spilled hot chocolate soaking into the backseat upholstery of a family SUV, children's car seats visible nearby",
-    "A brand new light grey L-shaped sofa in a showroom-quality living room with a fresh red sauce stain on one cushion — the contrast between the perfect room and the stain",
-    "A beautiful cream carpet in a bright sunlit hallway with a trail of muddy boot prints leading from the front door, coat rack and shoes visible",
+    "A fresh dark red liquid spill soaking into a light cream fabric sofa cushion. Simple composition, just the spill spreading into the fabric. Soft focus background",
+    "Muddy dog paw prints across a clean cream wool rug. Overhead angle looking down. Simple, minimal, just the prints on the rug",
+    "A dark coffee ring stain on a light grey fabric sofa arm rest. Close-up, clean composition, soft natural light",
+    "Red juice spill pooling on a beige car seat. Close-up of the stain soaking into the upholstery fabric. Simple and clean",
+    "A fresh red wine spill spreading across a white linen cushion. Minimal composition, overhead angle, just the stain and fabric",
+    "Chocolate smudges on a cream upholstered dining chair seat. Close-up, simple background, natural light",
+    "A dark tea stain ring on a light fabric ottoman. Simple composition, clean background, soft overhead light",
+    "Fresh muddy boot prints on a light cream carpet. Overhead shot looking down, clean and simple composition",
   ],
   "kitchen-degreaser": [
     "Thick grease buildup and burnt oil residue on stainless steel stovetop burner grates, shot macro",
