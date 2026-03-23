@@ -157,12 +157,12 @@ async function renderAdServerSide(
       const middleZoneH = Math.round(height * 0.70)
       const py = middleZoneTop + Math.round((middleZoneH - targetH) / 2)
 
-      // Draw product with drop shadow for depth
+      // Draw product with subtle drop shadow (product now has real transparency)
       ctx.save()
-      ctx.shadowColor = "rgba(0,0,0,0.4)"
-      ctx.shadowBlur = 20
+      ctx.shadowColor = "rgba(0,0,0,0.3)"
+      ctx.shadowBlur = 15
       ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 10
+      ctx.shadowOffsetY = 8
       ctx.drawImage(cutoutImg, px, py, targetW, targetH)
       ctx.restore()
     } catch (cutoutErr) {
@@ -450,43 +450,78 @@ async function scrapeProductHeroImage(productUrl: string): Promise<string | null
 }
 
 async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
-  // Try remove.bg API first
+  // Try remove.bg API first (if key available)
   const removeBgKey = process.env.REMOVE_BG_API_KEY
   if (removeBgKey) {
     try {
       const formData = new FormData()
       formData.append("image_file", new Blob([imageBuffer as unknown as ArrayBuffer]), "product.png")
       formData.append("size", "auto")
-
       const res = await fetch("https://api.remove.bg/v1.0/removebg", {
         method: "POST",
         headers: { "X-Api-Key": removeBgKey },
         body: formData,
       })
-
-      if (res.ok) {
-        return Buffer.from(await res.arrayBuffer())
-      } else {
-        console.warn("remove.bg returned status:", res.status)
-      }
+      if (res.ok) return Buffer.from(await res.arrayBuffer())
     } catch (err) {
       console.warn("remove.bg failed:", err)
     }
   }
 
-  // Fallback: use rembg Python subprocess
+  // Fallback: Green screen trick using Gemini
   try {
-    const { execSync } = await import("child_process")
-    const { writeFileSync, readFileSync, existsSync } = await import("fs")
-    const tmpIn = "/tmp/product_in.png"
-    const tmpOut = "/tmp/product_out.png"
-    writeFileSync(tmpIn, imageBuffer)
-    execSync(`python3 -m rembg i "${tmpIn}" "${tmpOut}"`, { timeout: 30000 })
-    if (existsSync(tmpOut)) {
-      return readFileSync(tmpOut)
+    const ai = getGeminiClient()
+    const base64 = imageBuffer.toString("base64")
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-preview-image-generation",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/jpeg", data: base64 } },
+            { text: "Place this exact product on a solid bright green (#00FF00) background. Keep the product exactly as it is — same angle, same lighting, same details. Only change the background to pure solid green (#00FF00). Nothing else in the image, just the product on green." }
+          ]
+        }
+      ],
+      config: { responseModalities: ["IMAGE"] as any },
+    })
+
+    const greenBase64 = response.candidates?.[0]?.content?.parts
+      ?.find((p: any) => p.inlineData)?.inlineData?.data
+
+    if (!greenBase64) return null
+
+    // Chroma-key: make green pixels transparent
+    const { createCanvas, loadImage } = await import("@napi-rs/canvas")
+    const greenBuf = Buffer.from(greenBase64, "base64")
+    const greenImg = await loadImage(greenBuf)
+    const canvas = createCanvas(greenImg.width, greenImg.height)
+    const ctx = canvas.getContext("2d")
+    ctx.drawImage(greenImg, 0, 0)
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const pixels = imageData.data
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i]
+      const g = pixels[i + 1]
+      const b = pixels[i + 2]
+      // Green screen detection: high green, low red and blue
+      if (g > 150 && r < 120 && b < 120) {
+        pixels[i + 3] = 0  // fully transparent
+      } else if (g > 130 && r < 140 && b < 140 && g > r && g > b) {
+        // Edge pixels with some green bleed — partial transparency
+        const greenness = (g - Math.max(r, b)) / g
+        if (greenness > 0.2) {
+          pixels[i + 3] = Math.round(255 * (1 - greenness))
+        }
+      }
     }
+    ctx.putImageData(imageData, 0, 0)
+
+    return Buffer.from(canvas.toBuffer("image/png"))
   } catch (err) {
-    console.warn("rembg fallback failed:", err)
+    console.warn("Green screen bg removal failed:", err)
   }
 
   return null // both methods failed, caller uses original image
