@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { analyzeProduct, selectScene, buildPhotographyPrompt, ProductIntelligence } from "@/lib/product-intelligence"
 import { getGeminiClient, GEMINI_PRO, GEMINI_FLASH, NANO_BANANA_2, generateText, describeImageWithVision } from "@/lib/gemini"
 import {
   CONCEPT_SYSTEM_PROMPT,
@@ -629,25 +630,47 @@ export async function POST(request: NextRequest) {
     const selectedConcept = concepts[0]
     logInfo(ROUTE_NAME, `Step 1 done: selected concept "${selectedConcept.hook}"`)
 
-    // ── STEP 2: Generate image prompts ────────────────────────────
-    logInfo(ROUTE_NAME, "Step 2: Generating image prompts")
-    const imgPromptUserPrompt = buildImagePromptUserPrompt(
-      selectedConcept,
-      messageZonePosition,
-      width,
-      height,
-      contrast
-    )
-    const imgPromptRaw = await generateText(GEMINI_FLASH, IMAGE_PROMPT_SYSTEM_PROMPT, imgPromptUserPrompt, 30_000)
-    const imgPromptData = extractJSON<{ prompts: Array<{ id: string; text: string; rank: number }> }>(imgPromptRaw)
-    const imagePrompts = imgPromptData.prompts ?? []
-    if (imagePrompts.length === 0) {
-      return NextResponse.json({ error: "Failed to generate image prompts" }, { status: 502 })
+    // ── STEP 0.5: Product Intelligence ───────────────────────────
+    let productIntel: ProductIntelligence | null = null
+    if (productUrl) {
+      logInfo(ROUTE_NAME, "Step 0.5: Analyzing product")
+      try {
+        productIntel = await analyzeProduct(productUrl, generateText, extractJSON)
+        logInfo(ROUTE_NAME, `Step 0.5 done: ${productIntel.name} → ${productIntel.category}`)
+      } catch (err) {
+        logWarn(ROUTE_NAME, `Product intelligence failed: ${(err as Error).message}`)
+      }
     }
-    // Pick rank 1 (or fallback to first)
-    const bestPrompt = imagePrompts.find((p) => p.rank === 1) ?? imagePrompts[0]
-    let imagePromptText = bestPrompt.text
-    imagePromptText += ". Ultra photorealistic photograph. Shot on Canon EOS R5 with 35mm f/1.4 lens. Shallow depth of field. Natural dramatic lighting. 4K resolution, razor sharp textures. Professional commercial photography. No text, no logos, no watermarks, no borders, no artifacts, no empty spaces."
+
+    // ── STEP 2: Generate image prompt ────────────────────────────
+    logInfo(ROUTE_NAME, "Step 2: Building image prompt")
+    let imagePromptText: string
+
+    if (productIntel) {
+      // Product Intelligence path: Scene DNA + Photography Spec
+      const scene = selectScene(productIntel)
+      const aspectRatio = width === height ? "1:1" : `${width}:${height}`
+      imagePromptText = buildPhotographyPrompt(scene, aspectRatio)
+      logInfo(ROUTE_NAME, `Step 2: Using Scene DNA — category: ${productIntel.category}, scene: "${scene.slice(0, 60)}..."`)
+    } else {
+      // Fallback: generic image prompt generation (existing flow)
+      const imgPromptUserPrompt = buildImagePromptUserPrompt(
+        selectedConcept,
+        messageZonePosition,
+        width,
+        height,
+        contrast
+      )
+      const imgPromptRaw = await generateText(GEMINI_FLASH, IMAGE_PROMPT_SYSTEM_PROMPT, imgPromptUserPrompt, 30_000)
+      const imgPromptData = extractJSON<{ prompts: Array<{ id: string; text: string; rank: number }> }>(imgPromptRaw)
+      const imagePrompts = imgPromptData.prompts ?? []
+      if (imagePrompts.length === 0) {
+        return NextResponse.json({ error: "Failed to generate image prompts" }, { status: 502 })
+      }
+      const bestPrompt = imagePrompts.find((p) => p.rank === 1) ?? imagePrompts[0]
+      imagePromptText = bestPrompt.text
+      imagePromptText += ". Ultra photorealistic photograph. Shot on Canon EOS R5 with 35mm f/1.4 lens. Shallow depth of field. Natural dramatic lighting. 4K resolution, razor sharp textures. Professional commercial photography. No text, no logos, no watermarks, no borders, no artifacts, no empty spaces."
+    }
     logInfo(ROUTE_NAME, "Step 2 done")
 
     // ── STEP 3: Generate image ────────────────────────────────────
@@ -822,7 +845,17 @@ export async function POST(request: NextRequest) {
       ],
     }
 
-    return NextResponse.json(response)
+    return NextResponse.json({
+      ...response,
+      productIntelligence: productIntel
+        ? {
+            name: productIntel.name,
+            category: productIntel.category,
+            features: productIntel.features,
+            sceneUsed: imagePromptText.slice(0, 100),
+          }
+        : null,
+    })
   } catch (err: unknown) {
     console.error("Pipeline error:", err)
     const msg = err instanceof Error ? err.message : "Pipeline failed"
