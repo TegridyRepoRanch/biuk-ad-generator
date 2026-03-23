@@ -1,6 +1,5 @@
 import { getSupabase, normalizeUrl } from "@/lib/supabase"
-
-const GEMINI_FLASH = "gemini-2.5-flash-preview-05-20"
+import { GEMINI_FLASH } from "@/lib/gemini"
 
 // ── Scene DNA Library ─────────────────────────────────────────────
 // Each category has 8-12 specific, photorealistic scene descriptions
