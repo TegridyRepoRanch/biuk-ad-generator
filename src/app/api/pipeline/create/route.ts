@@ -514,24 +514,42 @@ async function renderAdServerSide(
 
   // No bottom gradient — the gold banner handles contrast at bottom
 
-  // Draw product cutout (if provided) — centered, ~55% canvas width
+  // Draw product cutout (if provided) — adaptive sizing based on aspect ratio
   if (productCutoutBase64) {
     try {
-      // Use a generic image data URI — the canvas loadImage handles JPEG and PNG alike
-      // @napi-rs/canvas loadImage accepts Buffer directly
       const cutoutBuf = Buffer.from(productCutoutBase64, "base64")
       const cutoutImg = await loadImage(cutoutBuf)
-      const targetW = Math.round(width * 0.75)
-      const scale = targetW / cutoutImg.width
-      const targetH = Math.round(cutoutImg.height * scale)
-      const px = Math.round((width - targetW) / 2)
-      // Center vertically in the middle 70% of the canvas
-      // (skip top 15% headline zone and bottom 15% banner zone)
-      const middleZoneTop = Math.round(height * 0.27)
-      const middleZoneH = Math.round(height * 0.65)
-      const py = middleZoneTop + Math.round((middleZoneH - targetH) / 2)
 
-      // Draw product with subtle drop shadow (product now has real transparency)
+      // Adaptive sizing: measure product aspect ratio (height/width)
+      const productAspect = cutoutImg.height / cutoutImg.width
+      let targetHeightFrac: number
+      if (productAspect >= 3.0) {
+        targetHeightFrac = 0.45       // Very tall (e.g. spray bottles)
+      } else if (productAspect >= 2.0) {
+        targetHeightFrac = 0.50       // Tall/narrow
+      } else {
+        targetHeightFrac = 0.60       // Wide/squat (cans, tubs)
+      }
+
+      const bannerTopY = height - Math.round(height * 0.09)
+      const minClearance = 30  // ≥30px above banner
+
+      let targetH = Math.round(height * targetHeightFrac)
+      const scale = targetH / cutoutImg.height
+      let targetW = Math.round(cutoutImg.width * scale)
+
+      // Vertical placement: center between headline zone bottom and banner top
+      const headlineZoneBottom = Math.round(height * 0.22)  // just below 20% headline zone
+      const availableH = bannerTopY - minClearance - headlineZoneBottom
+      if (targetH > availableH) {
+        // Clamp to fit with clearance
+        targetH = availableH
+        targetW = Math.round(cutoutImg.width * (targetH / cutoutImg.height))
+      }
+
+      const px = Math.round((width - targetW) / 2)  // dead center horizontally
+      const py = headlineZoneBottom + Math.round((bannerTopY - minClearance - headlineZoneBottom - targetH) / 2)
+
       ctx.save()
       ctx.shadowColor = "rgba(0,0,0,0.3)"
       ctx.shadowBlur = 15
@@ -540,7 +558,6 @@ async function renderAdServerSide(
       ctx.drawImage(cutoutImg, px, py, targetW, targetH)
       ctx.restore()
     } catch (cutoutErr) {
-      // Non-fatal: log and continue
       console.warn("Product cutout compositing failed:", cutoutErr)
     }
   }
@@ -551,35 +568,44 @@ async function renderAdServerSide(
   ctx.fillStyle = bannerColor
   ctx.fillRect(0, bannerY, width, bannerHeight)
 
-  // Banner text (stars + text centered)
+  // Banner text: exactly one ★★★★★ followed by the CTA text
+  // Strip any existing stars from bannerText to prevent double stars
   const bannerFontSize = Math.round(width * 0.04)
   const stars = "★★★★★"
+  const cleanBannerText = bannerText.replace(/[★☆]+\s*/g, "").trim()
   ctx.font = `bold ${bannerFontSize}px AdFont`
-  ctx.fillStyle = "#1a1a1a"
+  ctx.fillStyle = bannerColor === "#D4C96B" ? "#1a1a1a" : "#FFFFFF"  // dark text on gold, white on colored
   ctx.textAlign = "center"
   ctx.textBaseline = "middle"
   ctx.shadowColor = "transparent"
   ctx.shadowBlur = 0
   ctx.shadowOffsetY = 0
+  // Measure stars separately to position them
+  const starFontSize = Math.round(bannerHeight * 0.45)
+  ctx.font = `bold ${starFontSize}px AdFont`
   const starsWidth = ctx.measureText(stars).width
   const gap = Math.round(width * 0.025)
-  const bannerTextWidth = ctx.measureText(bannerText).width
-  const totalWidth = starsWidth + gap + bannerTextWidth
+  ctx.font = `bold ${bannerFontSize}px AdFont`
+  const ctaTextWidth = ctx.measureText(cleanBannerText).width
+  const totalWidth = starsWidth + gap + ctaTextWidth
   const startX = (width - totalWidth) / 2
   const bannerCenterY = bannerY + bannerHeight / 2
   ctx.textAlign = "left"
-  // Faux extra-bold: stroke behind fill
-  ctx.lineWidth = Math.round(bannerFontSize * 0.05)
-  ctx.strokeStyle = "#1a1a1a"
-  ctx.lineJoin = "round"
-  ctx.strokeText(stars, startX, bannerCenterY)
+  // Stars — inherit banner text color
+  const bannerTextColor = bannerColor === "#D4C96B" ? "#1a1a1a" : "#FFFFFF"
+  ctx.fillStyle = bannerTextColor
+  ctx.font = `bold ${starFontSize}px AdFont`
   ctx.fillText(stars, startX, bannerCenterY)
-  ctx.strokeText(bannerText, startX + starsWidth + gap, bannerCenterY)
-  ctx.fillText(bannerText, startX + starsWidth + gap, bannerCenterY)
+  // CTA text
+  ctx.font = `bold ${bannerFontSize}px AdFont`
+  ctx.lineWidth = Math.round(bannerFontSize * 0.05)
+  ctx.strokeStyle = bannerTextColor
+  ctx.lineJoin = "round"
+  ctx.strokeText(cleanBannerText, startX + starsWidth + gap, bannerCenterY)
+  ctx.fillText(cleanBannerText, startX + starsWidth + gap, bannerCenterY)
 
   // Font settings — use bundled AdFont (DejaVu Sans)
   const fontFamily = "AdFont"
-  const headlineFontSize = Math.round(width * 0.082)
   const subheadFontSize = Math.round(width * 0.04)
   const headlineColor = "#FFFFFF"
   const subheadColor = "#FFFFFF"
@@ -588,29 +614,78 @@ async function renderAdServerSide(
   // Force headline ALL CAPS
   headline = headline.toUpperCase()
 
-  // Headline renders at the top (~5% from top)
-  const topY = Math.round(height * 0.05)
+  // ── Dynamic headline sizing: always target exactly 2 lines ────
   const headlineCenterX = width / 2
   const headlineMaxWidth = Math.round(width * 0.90)
+  const minFontSize = Math.round(width * 0.055)  // ~65px at 1080w
+  const maxFontSize = Math.round(width * 0.11)    // ~120px at 1080w
+  const baseFontSize = Math.round(width * 0.082)  // ~90px at 1080w
 
-  // Word-wrap headline (centered)
-  ctx.font = `${headlineWeight} ${headlineFontSize}px ${fontFamily}`
-  const words = headline.split(" ")
-  let line = ""
-  const lines: string[] = []
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word
-    if (ctx.measureText(test).width > headlineMaxWidth && line) {
-      lines.push(line)
-      line = word
-    } else {
-      line = test
+  // Smart 2-line split: break headline roughly in half by char count at nearest word boundary
+  // Never orphan a single word on its own line
+  function splitHeadlineIntoTwoLines(text: string): string[] {
+    const words = text.split(" ")
+    if (words.length <= 1) return [text]
+    if (words.length === 2) return words  // 2 words = 1 per line
+
+    const mid = text.length / 2
+    let bestBreak = 0
+    let bestDist = Infinity
+    let charCount = 0
+    for (let i = 0; i < words.length - 1; i++) {
+      charCount += words[i].length + (i > 0 ? 1 : 0)
+      const dist = Math.abs(charCount - mid)
+      // Penalize orphaning: if second half is just 1 word, add penalty
+      const remainingWords = words.length - (i + 1)
+      const penalty = remainingWords === 1 ? text.length * 0.3 : 0
+      if (dist + penalty < bestDist) {
+        bestDist = dist + penalty
+        bestBreak = i + 1
+      }
+    }
+    return [
+      words.slice(0, bestBreak).join(" "),
+      words.slice(bestBreak).join(" "),
+    ]
+  }
+
+  const lines = splitHeadlineIntoTwoLines(headline)
+
+  // Find font size that fits both lines within headlineMaxWidth
+  let headlineFontSize = baseFontSize
+  if (lines.length === 2) {
+    // Start at max and decrease until both lines fit
+    headlineFontSize = maxFontSize
+    for (let fs = maxFontSize; fs >= minFontSize; fs -= 2) {
+      ctx.font = `${headlineWeight} ${fs}px ${fontFamily}`
+      const line1W = ctx.measureText(lines[0]).width
+      const line2W = ctx.measureText(lines[1]).width
+      if (line1W <= headlineMaxWidth && line2W <= headlineMaxWidth) {
+        headlineFontSize = fs
+        break
+      }
+      headlineFontSize = fs
+    }
+  } else {
+    // Single line (very short headline) — size up
+    headlineFontSize = maxFontSize
+    for (let fs = maxFontSize; fs >= minFontSize; fs -= 2) {
+      ctx.font = `${headlineWeight} ${fs}px ${fontFamily}`
+      if (ctx.measureText(lines[0]).width <= headlineMaxWidth) {
+        headlineFontSize = fs
+        break
+      }
     }
   }
-  if (line) lines.push(line)
+
+  // Headline zone: top 20% of canvas, vertically centered within
+  const headlineZoneH = Math.round(height * 0.20)
+  const lineHeight = headlineFontSize * 1.15
+  const totalTextH = lines.length * lineHeight
+  const topY = Math.round((headlineZoneH - totalTextH) / 2)
 
   // Calculate total text height to size the gradient strip correctly
-  const headlineBlockH = lines.length * headlineFontSize * 1.15
+  const headlineBlockH = lines.length * lineHeight
   const subheadBlockH = subhead ? (8 + subheadFontSize * 1.15) : 0
   const textBlockBottom = topY + headlineBlockH + subheadBlockH + Math.round(height * 0.02)
   // Tight gradient — only covers headline text area, darker but short
@@ -639,7 +714,7 @@ async function renderAdServerSide(
   for (const l of lines) {
     ctx.strokeText(l, headlineCenterX, ty)
     ctx.fillText(l, headlineCenterX, ty)
-    ty += headlineFontSize * 1.15
+    ty += lineHeight
   }
 
   ctx.shadowColor = "transparent"
@@ -697,16 +772,16 @@ async function renderAdServerSide(
       edgeY = bcy + Math.sign(sin) * halfH
     }
 
-    // Leader line — gold color, visible thickness
-    ctx.strokeStyle = "#D4C96B"
+    // Leader line — matches bannerColor
+    ctx.strokeStyle = bannerColor
     ctx.lineWidth = Math.max(3, Math.round(width * 0.003))
     ctx.beginPath()
     ctx.moveTo(edgeX, edgeY)
     ctx.lineTo(ax, ay)
     ctx.stroke()
 
-    // Dot — gold to match leader line
-    ctx.fillStyle = "#D4C96B"
+    // Dot — matches bannerColor
+    ctx.fillStyle = bannerColor
     ctx.beginPath()
     ctx.arc(ax, ay, dotR, 0, Math.PI * 2)
     ctx.fill()
@@ -753,15 +828,20 @@ function autoPositionCallouts(
   height: number
 ): Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }> {
   // Corner positions for callout bubbles (X-pattern radiating from product center)
+  // Left bubbles: ≥60px from left edge (use max to guarantee minimum)
+  // Right bubbles: left-edge at ~72% of canvas width, ~30-40px right margin
+  // Top row: 45-48% from top; Bottom row: 62-66% from top
+  const leftBubbleX = Math.max(60, width * 0.06)
+  const rightBubbleX = width * 0.72
   const positions = [
-    // top-left: pushed out left, vertically at 32%
-    { bx: width * 0.01, by: height * 0.32, ax: width * 0.42, ay: height * 0.40 },
-    // top-right: anchor lands on product right side
-    { bx: width * 0.68, by: height * 0.32, ax: width * 0.58, ay: height * 0.40 },
-    // bottom-left: anchor lands on product left side
-    { bx: width * 0.01, by: height * 0.58, ax: width * 0.42, ay: height * 0.56 },
-    // bottom-right: anchor lands on product right side
-    { bx: width * 0.68, by: height * 0.58, ax: width * 0.58, ay: height * 0.56 },
+    // top-left
+    { bx: leftBubbleX, by: height * 0.46, ax: width * 0.42, ay: height * 0.48 },
+    // top-right
+    { bx: rightBubbleX, by: height * 0.46, ax: width * 0.58, ay: height * 0.48 },
+    // bottom-left
+    { bx: leftBubbleX, by: height * 0.63, ax: width * 0.42, ay: height * 0.61 },
+    // bottom-right
+    { bx: rightBubbleX, by: height * 0.63, ax: width * 0.58, ay: height * 0.61 },
   ]
 
   return calloutInputs.map((callout, i) => {
@@ -865,7 +945,7 @@ async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
           role: "user",
           parts: [
             { inlineData: { mimeType: "image/jpeg", data: base64 } },
-            { text: "Place this exact product on a solid bright green (#00FF00) background. Keep the product exactly as it is — same angle, same lighting, same details. Only change the background to pure solid green (#00FF00). Nothing else in the image, just the product on green." }
+            { text: "Place this exact product on a solid bright green (#00FF00) background. Keep the product exactly as it is — same angle, same lighting, same details. Only change the background to pure solid green (#00FF00). Do NOT add any text, labels, watermarks, words, or artifacts to the product image. Do NOT modify the product in any way — no added text, no 'undo' or any other words. Nothing else in the image, just the unmodified product on green." }
           ]
         }
       ],
