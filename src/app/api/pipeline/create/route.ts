@@ -828,7 +828,8 @@ async function renderAdServerSide(
 function autoPositionCallouts(
   calloutInputs: CalloutInput[],
   width: number,
-  height: number
+  height: number,
+  productBounds?: { x: number; y: number; w: number; h: number } | null
 ): Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }> {
   // Final callout placement — RED-approved zigzag (L-R-L-R)
   // All values stored as proportions, reference is 1080×1080
@@ -860,11 +861,11 @@ function autoPositionCallouts(
   const bottomLeftY = Math.round(leftZoneTop + leftZoneH * 0.68)
   const bottomRightY = Math.round(rightZoneTop + rightZoneH * 0.75)
 
-  // Product bounds (center 30% of canvas)
-  const productLeftEdge = Math.round(width * 0.35)
-  const productRightEdge = Math.round(width * 0.65)
-  const productTop = headlineZoneBottom + Math.round(20 * s)
-  const productBottom = bannerTop - Math.round(50 * s)
+  // Product bounds — use actual computed bounds if available, else estimate center 30%
+  const productLeftEdge = productBounds ? productBounds.x : Math.round(width * 0.35)
+  const productRightEdge = productBounds ? productBounds.x + productBounds.w : Math.round(width * 0.65)
+  const productTop = productBounds ? productBounds.y : headlineZoneBottom + Math.round(20 * s)
+  const productBottom = productBounds ? productBounds.y + productBounds.h : bannerTop - Math.round(50 * s)
   const productH = productBottom - productTop
   // Connector anchors land directly ON the product edge (no inset)
   const positions = [
@@ -1728,8 +1729,30 @@ export async function POST(request: NextRequest) {
     // ── STEP 6: Compose final ad ──────────────────────────────────
     logInfo(ROUTE_NAME, "Step 6: Composing ad")
 
+    // Compute actual product bounds for accurate callout anchor placement
+    let productBounds: { x: number; y: number; w: number; h: number } | null = null
+    if (productCutoutBase64) {
+      try {
+        const { loadImage: loadImg } = await import("@napi-rs/canvas")
+        const cleanedB64 = await cleanCheckerboardArtifacts(productCutoutBase64)
+        const tmpImg = await loadImg(Buffer.from(cleanedB64, "base64"))
+        const productAspect = tmpImg.height / tmpImg.width
+        let targetHeightFrac = productAspect >= 3.0 ? 0.42 : productAspect >= 2.0 ? 0.47 : 0.60
+        const bannerTopY = height - Math.round(height * 0.09)
+        const minClearance = 50
+        const headlineZoneBot = Math.round(height * 0.22)
+        const availH = bannerTopY - minClearance - headlineZoneBot
+        let tH = Math.round(height * targetHeightFrac)
+        if (tH > availH) tH = availH
+        const tW = Math.round(tmpImg.width * (tH / tmpImg.height))
+        const px = Math.round((width - tW) / 2)
+        const py = headlineZoneBot + Math.round((bannerTopY - minClearance - headlineZoneBot - tH) / 2)
+        productBounds = { x: px, y: py, w: tW, h: tH }
+      } catch { /* fallback to estimates */ }
+    }
+
     // Position callouts
-    const positionedCallouts = autoPositionCallouts(callouts, width, height)
+    const positionedCallouts = autoPositionCallouts(callouts, width, height, productBounds)
 
     // Text position from message zone
     const textX = messageZone.x
