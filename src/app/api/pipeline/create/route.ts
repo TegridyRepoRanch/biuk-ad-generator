@@ -681,10 +681,11 @@ async function renderAdServerSide(
   }
 
   // Headline zone: top 20% of canvas, vertically centered within
+  // Minimum 25px top padding so text doesn't smush against top edge
   const headlineZoneH = Math.round(height * 0.20)
   const lineHeight = headlineFontSize * 1.15
   const totalTextH = lines.length * lineHeight
-  const topY = Math.round((headlineZoneH - totalTextH) / 2)
+  const topY = Math.max(25, Math.round((headlineZoneH - totalTextH) / 2))
 
   // Calculate total text height to size the gradient strip correctly
   const headlineBlockH = lines.length * lineHeight
@@ -829,21 +830,30 @@ function autoPositionCallouts(
   width: number,
   height: number
 ): Array<{ text: string; position: { x: number; y: number }; anchorPoint: { x: number; y: number } }> {
-  // Corner positions for callout bubbles (X-pattern radiating from product center)
-  // Left bubbles: ≥60px from left edge (use max to guarantee minimum)
-  // Right bubbles: left-edge at ~72% of canvas width, ~30-40px right margin
-  // Top row: 45-48% from top; Bottom row: 62-66% from top
-  const leftBubbleX = Math.max(80, width * 0.08)   // ≥80px from left edge
-  const rightBubbleX = width * 0.74                // right callouts further right
+  // Exact callout positions — spec'd for 1080×1080, scale proportionally
+  // Position = bubble top-left corner. Bubbles are ~200×90px.
+  // Spec gives center coords, so offset by half-bubble: bx = centerX - 100, by = centerY - 45
+  const s = width / 1080  // scale factor for non-1080 canvases
+  const bubbleW = Math.round(200 * s)
+  const bubbleH = Math.round(90 * s)
+  const halfW = Math.round(bubbleW / 2)
+  const halfH = Math.round(bubbleH / 2)
+
+  // Bubble centers: left=140, right=940, top-left Y=330, top-right Y=380, bot-left Y=620, bot-right Y=670
+  // Anchors: all at X≈540 (product center), staggered Y for different product points
   const positions = [
-    // top-left
-    { bx: leftBubbleX, by: height * 0.46, ax: width * 0.42, ay: height * 0.48 },
-    // top-right
-    { bx: rightBubbleX, by: height * 0.46, ax: width * 0.58, ay: height * 0.48 },
-    // bottom-left
-    { bx: leftBubbleX, by: height * 0.63, ax: width * 0.42, ay: height * 0.61 },
-    // bottom-right
-    { bx: rightBubbleX, by: height * 0.63, ax: width * 0.58, ay: height * 0.61 },
+    // top-left: center(140, 330), anchor at trigger area
+    { bx: Math.round(140 * s) - halfW, by: Math.round(330 * s) - halfH,
+      ax: Math.round(540 * s), ay: Math.round(350 * s) },
+    // top-right: center(940, 380), anchor at neck area — slight Y offset from top-left
+    { bx: Math.round(940 * s) - halfW, by: Math.round(380 * s) - halfH,
+      ax: Math.round(540 * s), ay: Math.round(400 * s) },
+    // bottom-left: center(140, 620), anchor at mid-label
+    { bx: Math.round(140 * s) - halfW, by: Math.round(620 * s) - halfH,
+      ax: Math.round(540 * s), ay: Math.round(580 * s) },
+    // bottom-right: center(940, 670), anchor at lower label — slight Y offset from bottom-left
+    { bx: Math.round(940 * s) - halfW, by: Math.round(670 * s) - halfH,
+      ax: Math.round(540 * s), ay: Math.round(640 * s) },
   ]
 
   return calloutInputs.map((callout, i) => {
