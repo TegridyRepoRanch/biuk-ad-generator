@@ -1,19 +1,15 @@
-name: Sync to Fork
+# Disabled — sync is handled by pushing to both remotes directly.
+# The fork (HighestTegridyRepos) and upstream (TegridyRepoRanch) are kept
+# in sync via `git push origin main && git push upstream main`.
+# Vercel deploys from TegridyRepoRanch via Git integration.
+
+name: Sync to Fork (disabled)
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:  # manual only — no longer auto-triggers
 
 jobs:
   sync:
+    if: false  # disabled
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.FORK_SYNC_TOKEN }}
-
-      - name: Push to fork mirror
-        run: |
-          git remote add fork https://x-access-token:${{ secrets.FORK_SYNC_TOKEN }}@github.com/HighestTegridyRepos/${{ github.event.repository.name }}.git
-          git push fork main --force
-
+      - run: echo "Sync disabled"
