@@ -740,7 +740,7 @@ async function renderAdServerSide(
     const fontSize = Math.round(width * 0.038)
     const padX = 24
     const padY = 18
-    const dotR = Math.round(6 * (width / 1080))   // 6px at 1080
+    const dotR = Math.round(8 * (width / 1080))   // 8px at 1080 — visible on product surface
     const lineW = Math.round(2 * (width / 1080))   // 2px at 1080
     const borderR = Math.round(12 * (width / 1080))  // 12px at 1080
 
@@ -866,22 +866,20 @@ function autoPositionCallouts(
   const productTop = headlineZoneBottom + Math.round(20 * s)
   const productBottom = bannerTop - Math.round(50 * s)
   const productH = productBottom - productTop
-  const anchorInset = Math.round(15 * s)
-
-  // Connector anchors: different points on product edges
+  // Connector anchors land directly ON the product edge (no inset)
   const positions = [
     // top-left bubble → product left edge, 18% down product height
     { cx: leftCenterX, cy: topLeftY,
-      ax: productLeftEdge + anchorInset, ay: productTop + Math.round(productH * 0.18) },
+      ax: productLeftEdge, ay: productTop + Math.round(productH * 0.18) },
     // top-right bubble → product right edge, 35% down product height
     { cx: rightCenterX, cy: topRightY,
-      ax: productRightEdge - anchorInset, ay: productTop + Math.round(productH * 0.35) },
+      ax: productRightEdge, ay: productTop + Math.round(productH * 0.35) },
     // bottom-left bubble → product left edge, 62% down product height
     { cx: leftCenterX, cy: bottomLeftY,
-      ax: productLeftEdge + anchorInset, ay: productTop + Math.round(productH * 0.62) },
+      ax: productLeftEdge, ay: productTop + Math.round(productH * 0.62) },
     // bottom-right bubble → product right edge, 82% down product height
     { cx: rightCenterX, cy: bottomRightY,
-      ax: productRightEdge - anchorInset, ay: productTop + Math.round(productH * 0.82) },
+      ax: productRightEdge, ay: productTop + Math.round(productH * 0.82) },
   ]
 
   return calloutInputs.map((callout, i) => {
