@@ -517,7 +517,9 @@ async function renderAdServerSide(
   // Draw product cutout (if provided) — adaptive sizing based on aspect ratio
   if (productCutoutBase64) {
     try {
-      const cutoutBuf = Buffer.from(productCutoutBase64, "base64")
+      // Clean any checkerboard artifacts before compositing onto background
+      const cleanedCutoutBase64 = await cleanCheckerboardArtifacts(productCutoutBase64)
+      const cutoutBuf = Buffer.from(cleanedCutoutBase64, "base64")
       const cutoutImg = await loadImage(cutoutBuf)
 
       // Adaptive sizing: measure product aspect ratio (height/width)
@@ -1122,12 +1124,13 @@ async function cleanCheckerboardArtifacts(pngBase64: string): Promise<string> {
       const pi = idx * 4
       const r = pixels[pi], g = pixels[pi + 1], b = pixels[pi + 2], a = pixels[pi + 3]
 
-      // Match checkerboard colors: white (>235) OR grey (180-210, neutral)
+      // Match checkerboard colors: white (>225) OR grey (150-225, neutral)
       // Also match already-transparent pixels
-      const isWhite = r > 235 && g > 235 && b > 235
-      const isGrey = r > 175 && r < 215 && g > 175 && g < 215 && b > 175 && b < 215
-        && Math.abs(r - g) < 10 && Math.abs(r - b) < 10  // must be neutral grey
-      const isTransparent = a < 30
+      // Gemini checkerboard uses various shades — wide range needed
+      const isWhite = r > 225 && g > 225 && b > 225
+      const isGrey = r > 145 && r < 230 && g > 145 && g < 230 && b > 145 && b < 230
+        && Math.abs(r - g) < 15 && Math.abs(r - b) < 15  // must be neutral grey
+      const isTransparent = a < 50
 
       if (isWhite || isGrey || isTransparent) {
         visited[idx] = 1
