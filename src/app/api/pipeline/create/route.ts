@@ -741,7 +741,7 @@ async function renderAdServerSide(
     const padX = 24
     const padY = 18
     const dotR = Math.round(8 * (width / 1080))   // 8px at 1080 — visible on product surface
-    const lineW = Math.round(2 * (width / 1080))   // 2px at 1080
+    const lineW = Math.max(2, Math.round(3 * (width / 1080)))   // 3px at 1080
     const borderR = Math.round(12 * (width / 1080))  // 12px at 1080
 
     ctx.font = `600 ${fontSize}px ${fontFamily}`
@@ -777,17 +777,21 @@ async function renderAdServerSide(
 
     // Leader line — matches bannerColor
     ctx.strokeStyle = bannerColor
-    ctx.lineWidth = Math.max(3, Math.round(width * 0.003))
+    ctx.lineWidth = lineW
     ctx.beginPath()
     ctx.moveTo(edgeX, edgeY)
     ctx.lineTo(ax, ay)
     ctx.stroke()
 
-    // Dot — matches bannerColor
-    ctx.fillStyle = bannerColor
+    // Dot on product surface — matches bannerColor with white outline for visibility
     ctx.beginPath()
     ctx.arc(ax, ay, dotR, 0, Math.PI * 2)
+    ctx.fillStyle = bannerColor
     ctx.fill()
+    // White outline so dot is visible on dark products
+    ctx.strokeStyle = "#FFFFFF"
+    ctx.lineWidth = Math.max(1, Math.round(2 * (width / 1080)))
+    ctx.stroke()
 
     // Bubble
     ctx.fillStyle = "rgba(0,0,0,0.85)"
