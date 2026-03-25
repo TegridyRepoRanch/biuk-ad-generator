@@ -992,6 +992,72 @@ async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
   return null // both methods failed, caller uses original image
 }
 
+// Non-AI white background removal — works great for Shopify product photos on white/light BG
+async function removeWhiteBackground(imageBuffer: Buffer): Promise<Buffer | null> {
+  try {
+    const { createCanvas, loadImage } = await import("@napi-rs/canvas")
+    const img = await loadImage(imageBuffer)
+    const canvas = createCanvas(img.width, img.height)
+    const ctx = canvas.getContext("2d")
+    ctx.drawImage(img, 0, 0)
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const pixels = imageData.data
+    let whitePixels = 0
+    const totalPixels = pixels.length / 4
+
+    // First pass: count white-ish pixels to determine if BG is white
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] > 230 && pixels[i+1] > 230 && pixels[i+2] > 230) whitePixels++
+    }
+
+    // If less than 20% of image is white, not a white-BG product shot
+    if (whitePixels / totalPixels < 0.20) return null
+
+    // Flood-fill from corners to find background region
+    const w = canvas.width, h = canvas.height
+    const visited = new Uint8Array(totalPixels)
+    const queue: number[] = []
+
+    // Seed from all 4 edges
+    for (let x = 0; x < w; x++) { queue.push(x); queue.push((h-1) * w + x) }
+    for (let y = 0; y < h; y++) { queue.push(y * w); queue.push(y * w + (w-1)) }
+
+    while (queue.length > 0) {
+      const idx = queue.pop()!
+      if (idx < 0 || idx >= totalPixels || visited[idx]) continue
+      const pi = idx * 4
+      const r = pixels[pi], g = pixels[pi+1], b = pixels[pi+2]
+      // White-ish threshold (background)
+      if (r > 210 && g > 210 && b > 210) {
+        visited[idx] = 1
+        const x = idx % w, y = Math.floor(idx / w)
+        if (x > 0) queue.push(idx - 1)
+        if (x < w - 1) queue.push(idx + 1)
+        if (y > 0) queue.push(idx - w)
+        if (y < h - 1) queue.push(idx + w)
+      }
+    }
+
+    // Make visited (background) pixels transparent
+    let removedCount = 0
+    for (let i = 0; i < totalPixels; i++) {
+      if (visited[i]) {
+        pixels[i*4+3] = 0
+        removedCount++
+      }
+    }
+
+    // If we removed too little or too much, bail
+    if (removedCount / totalPixels < 0.15 || removedCount / totalPixels > 0.95) return null
+
+    ctx.putImageData(imageData, 0, 0)
+    return Buffer.from(canvas.toBuffer("image/png"))
+  } catch {
+    return null
+  }
+}
+
 async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null> {
   try {
     const imageRes = await fetch(imageUrl, {
@@ -1013,7 +1079,7 @@ async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null>
           parts: [
             { inlineData: { mimeType, data: base64 } },
             {
-              text: "Remove the background completely from this product image. Return ONLY the product on a transparent background. The background should be completely transparent/removed. No checkerboard, no white fill, no shadow — pure transparency everywhere that is not the product itself. Clean, precise edges.",
+              text: "Remove the background completely from this product image. Return ONLY the product on a transparent background. The background should be completely transparent/removed. No checkerboard, no white fill, no shadow — pure transparency everywhere that is not the product itself. Clean, precise edges. CRITICAL: Do NOT modify the product in any way. Do NOT add, change, or overlay ANY text on the product. Do NOT add words like 'undo' or any other labels. The product must look exactly as it does in the original photo — only the background changes.",
             },
           ],
         },
@@ -1409,28 +1475,38 @@ export async function POST(request: NextRequest) {
         if (heroImageUrl) {
           logInfo(ROUTE_NAME, `Step 5.5: Found hero image ${heroImageUrl}`)
 
-          // Try native Gemini bg removal first (no green-screen artifacts like "undo" text)
-          logInfo(ROUTE_NAME, "Step 5.5: Attempting native background removal")
-          const nativeCutout = await removeBackgroundFromUrl(heroImageUrl)
-          if (nativeCutout) {
-            productCutoutBase64 = nativeCutout
-            logInfo(ROUTE_NAME, "Step 5.5: Native background removal succeeded")
-          } else {
-            // Fallback: fetch image + green-screen method
-            logInfo(ROUTE_NAME, "Step 5.5: Native failed, trying green-screen fallback")
-            const imgRes = await fetch(heroImageUrl, {
-              headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
-              signal: AbortSignal.timeout(15000),
-            })
-            if (imgRes.ok) {
-              const imgBuf = await imgRes.arrayBuffer()
-              const cleanCutout = await removeBackground(Buffer.from(imgBuf))
-              if (cleanCutout) {
-                productCutoutBase64 = cleanCutout.toString("base64")
-                logInfo(ROUTE_NAME, "Step 5.5: Green-screen background removal succeeded")
+          // Step 1: Fetch the image
+          const imgRes = await fetch(heroImageUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+            signal: AbortSignal.timeout(15000),
+          })
+          if (imgRes.ok) {
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+
+            // Try non-AI white-bg removal first (fastest, zero artifacts)
+            logInfo(ROUTE_NAME, "Step 5.5: Trying white-bg removal (no AI)")
+            const whiteBgCutout = await removeWhiteBackground(imgBuf)
+            if (whiteBgCutout) {
+              productCutoutBase64 = whiteBgCutout.toString("base64")
+              logInfo(ROUTE_NAME, "Step 5.5: White-bg removal succeeded (no AI needed)")
+            } else {
+              // Fallback: Gemini native bg removal
+              logInfo(ROUTE_NAME, "Step 5.5: White-bg failed, trying Gemini native bg removal")
+              const nativeCutout = await removeBackgroundFromUrl(heroImageUrl)
+              if (nativeCutout) {
+                productCutoutBase64 = nativeCutout
+                logInfo(ROUTE_NAME, "Step 5.5: Gemini native bg removal succeeded")
               } else {
-                productCutoutBase64 = Buffer.from(imgBuf).toString("base64")
-                logInfo(ROUTE_NAME, "Step 5.5: Background removal unavailable — using original image")
+                // Last resort: green-screen method
+                logInfo(ROUTE_NAME, "Step 5.5: Native failed, trying green-screen fallback")
+                const cleanCutout = await removeBackground(imgBuf)
+                if (cleanCutout) {
+                  productCutoutBase64 = cleanCutout.toString("base64")
+                  logInfo(ROUTE_NAME, "Step 5.5: Green-screen bg removal succeeded")
+                } else {
+                  productCutoutBase64 = imgBuf.toString("base64")
+                  logInfo(ROUTE_NAME, "Step 5.5: All bg removal failed — using original image")
+                }
               }
             }
           }
