@@ -775,22 +775,30 @@ async function renderAdServerSide(
       edgeY = bcy + Math.sign(sin) * halfH
     }
 
-    // Leader line — matches bannerColor
+    // Leader line — white shadow underneath for contrast on any background
+    ctx.save()
+    ctx.strokeStyle = "rgba(255,255,255,0.6)"
+    ctx.lineWidth = lineW + Math.round(4 * (width / 1080))
+    ctx.beginPath()
+    ctx.moveTo(edgeX, edgeY)
+    ctx.lineTo(ax, ay)
+    ctx.stroke()
+    // Colored line on top
     ctx.strokeStyle = bannerColor
     ctx.lineWidth = lineW
     ctx.beginPath()
     ctx.moveTo(edgeX, edgeY)
     ctx.lineTo(ax, ay)
     ctx.stroke()
+    ctx.restore()
 
-    // Dot on product surface — matches bannerColor with white outline for visibility
+    // Dot on product surface — bannerColor fill with white outline
     ctx.beginPath()
     ctx.arc(ax, ay, dotR, 0, Math.PI * 2)
     ctx.fillStyle = bannerColor
     ctx.fill()
-    // White outline so dot is visible on dark products
     ctx.strokeStyle = "#FFFFFF"
-    ctx.lineWidth = Math.max(1, Math.round(2 * (width / 1080)))
+    ctx.lineWidth = Math.max(2, Math.round(2.5 * (width / 1080)))
     ctx.stroke()
 
     // Bubble
