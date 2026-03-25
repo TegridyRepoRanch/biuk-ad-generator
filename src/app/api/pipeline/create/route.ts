@@ -524,9 +524,9 @@ async function renderAdServerSide(
       const productAspect = cutoutImg.height / cutoutImg.width
       let targetHeightFrac: number
       if (productAspect >= 3.0) {
-        targetHeightFrac = 0.45       // Very tall (e.g. spray bottles)
+        targetHeightFrac = 0.42       // Very tall (e.g. spray bottles)
       } else if (productAspect >= 2.0) {
-        targetHeightFrac = 0.50       // Tall/narrow
+        targetHeightFrac = 0.47       // Tall/narrow
       } else {
         targetHeightFrac = 0.60       // Wide/squat (cans, tubs)
       }
@@ -831,8 +831,8 @@ function autoPositionCallouts(
   // Left bubbles: ≥60px from left edge (use max to guarantee minimum)
   // Right bubbles: left-edge at ~72% of canvas width, ~30-40px right margin
   // Top row: 45-48% from top; Bottom row: 62-66% from top
-  const leftBubbleX = Math.max(70, width * 0.07)
-  const rightBubbleX = width * 0.72
+  const leftBubbleX = Math.max(80, width * 0.08)   // ≥80px from left edge
+  const rightBubbleX = width * 0.74                // right callouts further right
   const positions = [
     // top-left
     { bx: leftBubbleX, by: height * 0.46, ax: width * 0.42, ay: height * 0.48 },
@@ -1089,6 +1089,94 @@ async function removeWhiteBackground(imageBuffer: Buffer): Promise<Buffer | null
   }
 }
 
+// Post-process cutout PNG to remove checkerboard artifacts from Gemini bg removal
+// Gemini sometimes renders "transparent" areas as literal grey/white checkerboard pixels
+async function cleanCheckerboardArtifacts(pngBase64: string): Promise<string> {
+  try {
+    const { createCanvas, loadImage } = await import("@napi-rs/canvas")
+    const buf = Buffer.from(pngBase64, "base64")
+    const img = await loadImage(buf)
+    const canvas = createCanvas(img.width, img.height)
+    const ctx = canvas.getContext("2d")
+    ctx.drawImage(img, 0, 0)
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const pixels = imageData.data
+    const w = canvas.width, h = canvas.height
+
+    // Detect checkerboard: alternating grey (~191-204) and white (~240-255) in grid pattern
+    // Typical checkerboard uses 8x8, 10x10, or 16x16 squares
+    // Strategy: flood-fill from edges, targeting grey/white pixels (same as white-bg removal)
+    // but with a wider color range to catch checkerboard grey
+    const totalPixels = pixels.length / 4
+    const visited = new Uint8Array(totalPixels)
+    const queue: number[] = []
+
+    // Seed from all 4 edges
+    for (let x = 0; x < w; x++) { queue.push(x); queue.push((h - 1) * w + x) }
+    for (let y = 0; y < h; y++) { queue.push(y * w); queue.push(y * w + (w - 1)) }
+
+    while (queue.length > 0) {
+      const idx = queue.pop()!
+      if (idx < 0 || idx >= totalPixels || visited[idx]) continue
+      const pi = idx * 4
+      const r = pixels[pi], g = pixels[pi + 1], b = pixels[pi + 2], a = pixels[pi + 3]
+
+      // Match checkerboard colors: white (>235) OR grey (180-210, neutral)
+      // Also match already-transparent pixels
+      const isWhite = r > 235 && g > 235 && b > 235
+      const isGrey = r > 175 && r < 215 && g > 175 && g < 215 && b > 175 && b < 215
+        && Math.abs(r - g) < 10 && Math.abs(r - b) < 10  // must be neutral grey
+      const isTransparent = a < 30
+
+      if (isWhite || isGrey || isTransparent) {
+        visited[idx] = 1
+        const x = idx % w, y = Math.floor(idx / w)
+        if (x > 0) queue.push(idx - 1)
+        if (x < w - 1) queue.push(idx + 1)
+        if (y > 0) queue.push(idx - w)
+        if (y < h - 1) queue.push(idx + w)
+      }
+    }
+
+    // Make visited pixels transparent
+    let cleaned = 0
+    for (let i = 0; i < totalPixels; i++) {
+      if (visited[i]) {
+        pixels[i * 4 + 3] = 0
+        cleaned++
+      }
+    }
+
+    // If we cleaned >90% of pixels, the product was lost — return original
+    if (cleaned / totalPixels > 0.90) return pngBase64
+
+    // Soften edges: partially transparent border pixels
+    for (let i = 0; i < totalPixels; i++) {
+      if (!visited[i] && pixels[i * 4 + 3] > 0) {
+        const x = i % w, y = Math.floor(i / w)
+        // Check 4-neighbors for transparent
+        let transparentNeighbors = 0
+        if (x > 0 && visited[i - 1]) transparentNeighbors++
+        if (x < w - 1 && visited[i + 1]) transparentNeighbors++
+        if (y > 0 && visited[i - w]) transparentNeighbors++
+        if (y < h - 1 && visited[i + w]) transparentNeighbors++
+        // Edge pixel: soften alpha based on how many transparent neighbors
+        if (transparentNeighbors >= 2) {
+          pixels[i * 4 + 3] = Math.round(pixels[i * 4 + 3] * 0.5)
+        } else if (transparentNeighbors === 1) {
+          pixels[i * 4 + 3] = Math.round(pixels[i * 4 + 3] * 0.8)
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0)
+    return Buffer.from(canvas.toBuffer("image/png")).toString("base64")
+  } catch {
+    return pngBase64  // On error, return original
+  }
+}
+
 async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null> {
   try {
     const imageRes = await fetch(imageUrl, {
@@ -1122,7 +1210,8 @@ async function removeBackgroundFromUrl(imageUrl: string): Promise<string | null>
       ?.find((p: { inlineData?: { data?: string } }) => p.inlineData)?.inlineData?.data
     if (!cutoutBase64) return null
 
-    return cutoutBase64 // returns base64 PNG
+    // Post-process to remove checkerboard artifacts from Gemini output
+    return await cleanCheckerboardArtifacts(cutoutBase64)
   } catch (err) {
     logWarn(ROUTE_NAME, `Background removal failed: ${(err as Error).message}`)
     return null
