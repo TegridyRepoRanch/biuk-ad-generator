@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from "next/server"
 import { analyzeProduct, selectScene, buildPhotographyPrompt, ProductIntelligence } from "@/lib/product-intelligence"
 import { getGeminiClient, GEMINI_PRO, GEMINI_FLASH, generateText, describeImageWithVision } from "@/lib/gemini"
@@ -59,7 +60,7 @@ interface PipelineRequest {
   sceneId?: string
   backgroundImageDataUrl?: string
   beforeAfterScenes?: Array<{ dirtyImageDataUrl: string; cleanImageDataUrl: string }>
-  checklistImages?: Array<{ imageDataUrl: string; label: string }>
+  checklistImages?: Array<{ imageDataUrl:string; label: string }>
   checklistItems?: string[]
   bannerStyle?: "trustpilot" | "gold"
   socialProofText?: string
@@ -535,20 +536,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    
     // ── STEP 6: Compose final ad ──────────────────────────────────
     logInfo(ROUTE_NAME, "Step 6: Composing ad")
 
+    const ad = finalAds[0]
+    let compositionError: string | null = null
+    const debugLogs: string[] = []
+
     // Compute actual product bounds for accurate callout anchor placement
     let productBounds: { x: number; y: number; w: number; h: number } | null = null
-    if (productCutoutBase64) {
+    if (productImageUrl) {
       try {
         const { default: sharpMod } = await import("sharp")
-        const cleanedB64 = await cleanCheckerboardArtifacts(productCutoutBase64)
-        const tmpMeta = await sharpMod(Buffer.from(cleanedB64, "base64")).metadata()
+        const productCutoutBuffer = await fetchBuffer(productImageUrl)
+        const tmpMeta = await sharpMod(productCutoutBuffer).metadata()
         const tmpImgW = tmpMeta.width ?? 200
         const tmpImgH = tmpMeta.height ?? 200
         const productAspect = tmpImgH / tmpImgW
-        let targetHeightFrac = productAspect >= 3.0 ? 0.42 : productAspect >= 2.0 ? 0.47 : 0.60
+        let targetHeightFrac = productAspect >= 2.0 ? 0.50 : 0.60
         const bannerTopY = height - Math.round(height * 0.09)
         const minClearance = 50
         const headlineZoneBot = Math.round(height * 0.22)
@@ -559,127 +565,72 @@ export async function POST(request: NextRequest) {
         const px = Math.round((width - tW) / 2)
         const py = headlineZoneBot + Math.round((bannerTopY - minClearance - headlineZoneBot - tH) / 2)
         productBounds = { x: px, y: py, w: tW, h: tH }
-      } catch { /* fallback to estimates */ }
+      } catch(e) { 
+        debugLogs.push(`Could not calculate product bounds: ${(e as Error).message}`)
+      }
     }
 
-    // Position callouts
     const positionedCallouts = autoPositionCallouts(callouts, width, height, productBounds)
-
-    // Text position from message zone
-    const textX = messageZone.x
-    const textY = messageZone.y
-    const maxTextW = messageZone.width
-
-    let adLabelOverride: string | null = null
-    // Use sharp for server-side composition (Vercel-compatible, no native deps)
-    let finalImageDataUrl: string
-    let useSimpleFallback = false
-    let _debugLayers: Array<{ i: number; bytes: number; left: number; top: number }> = []
-
+    ad.callouts = positionedCallouts;
+    
     try {
       const sharpModule = await import("sharp")
       const sharp = sharpModule.default
-      
-      // Fetch background image and resize to target dimensions
       const bgResponse = await fetch(generatedImageUrl)
       if (!bgResponse.ok) throw new Error("Failed to fetch generated background")
       const rawBgBuffer = Buffer.from(await bgResponse.arrayBuffer())
       const bgBuffer = await sharp(rawBgBuffer).resize(width, height, { fit: "cover" }).png().toBuffer()
-      
-      // Build the entire overlay as a single PNG layer
-      const overlayBuffer = await renderOverlayPng(
-        width,
-        height,
-        headlineOverride ?? selectedHeadline.headline,
-        subheadOverride ?? selectedHeadline.subhead,
+      debugLogs.push(`Background buffer created, size: ${bgBuffer.length} bytes`)
+
+      const { buffer: overlayBuffer, logs: renderLogs } = await renderOverlayPng(
+        width, height,
+        ad.headline, ad.subhead,
         positionedCallouts,
-        bannerColor,
-        bannerText
+        bannerColor, bannerText
       );
+      debugLogs.push(...renderLogs)
 
-      logInfo(ROUTE_NAME, `Single overlay layer built, bytes: ${overlayBuffer.length}`);
+      let layers = [{ input: overlayBuffer, left: 0, top: 0 }];
 
-      const overlayLayers = [{ input: overlayBuffer, left: 0, top: 0 }];
-      
-      _debugLayers = [{ i: 0, bytes: overlayBuffer.length, left: 0, top: 0 }];
-      
-      // Composite: background + all overlay layers
-      let composed = sharp(bgBuffer).composite(overlayLayers)
-      
-      // Add product cutout on top if available
-      if (productCutoutBase64) {
-        const rawCutout = Buffer.from(productCutoutBase64, "base64")
-        // Resize product cutout to fit within product bounds (or default center position)
-        const pX = productBounds?.x ?? Math.round((width - 431) / 2)
-        const pY = productBounds?.y ?? 402
-        const pW = productBounds?.w ?? 431
-        const pH = productBounds?.h ?? 431
-        const resizedCutout = await sharp(rawCutout).resize(pW, pH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
-        composed = composed.composite([
-          {
-            input: resizedCutout,
-            left: pX,
-            top: pY,
-          },
-        ])
+      if (productImageUrl) {
+        const productCutoutBuffer = await fetchBuffer(productImageUrl);
+        debugLogs.push(`Product cutout fetched, size: ${productCutoutBuffer.length} bytes`)
+        layers.push({ input: productCutoutBuffer, gravity: 'center' })
       }
       
-      const composedBuffer = await composed.png().toBuffer()
-      finalImageDataUrl = `data:image/png;base64,${composedBuffer.toString("base64")}`
-      logInfo(ROUTE_NAME, "Step 6: Sharp composition succeeded")
-    } catch (sharpErr) {
-      const err = sharpErr as Error
-      logWarn(ROUTE_NAME, `Sharp composition failed: ${err.message}`)
-      useSimpleFallback = true
-      finalImageDataUrl = generatedImageUrl
-      // TEMPORARY DEBUGGING: return the error in the label
-      adLabelOverride = `Error: ${err.message}`
+      const finalImageBuffer = await sharp(bgBuffer).composite(layers).png().toBuffer();
+      debugLogs.push(`Composition complete, final size: ${finalImageBuffer.length} bytes`)
+      ad.imageDataUrl = `data:image/png;base64,${finalImageBuffer.toString('base64')}`;
+      ad.label = "Ad"
+
+    } catch (e: any) {
+      console.error("Composition error:", e);
+      compositionError = e.message;
+      debugLogs.push(`COMPOSITION FAILED: ${e.message}`)
+      ad.label = "Ad (composition failed)";
+      const bgResponse = await fetch(generatedImageUrl)
+      const rawBgBuffer = Buffer.from(await bgResponse.arrayBuffer())
+      ad.imageDataUrl = `data:image/png;base64,${rawBgBuffer.toString('base64')}`;
     }
 
-    logInfo(ROUTE_NAME, "Step 6 done")
-
-    // ── Build response ────────────────────────────────────────────
-    const response: PipelineResponse = {
+    // Step 7: Final assembly
+    return NextResponse.json({
       concepts,
       selectedConcept,
-      imagePrompt: imagePromptText,
+      imagePrompt,
       generatedImageUrl,
       imageDescription,
       headlines,
       selectedHeadline,
-      finalAds: [
-        {
-          imageDataUrl: finalImageDataUrl,
-          label: adLabelOverride ?? (useSimpleFallback ? "Ad (raw image — compose client-side)" : "Ad"),
-          headline: headlineOverride ?? selectedHeadline.headline,
-          subhead: subheadOverride ?? selectedHeadline.subhead,
-          cta: selectedHeadline.cta,
-          callouts: positionedCallouts,
-        },
-      ],
-    }
-
-    return NextResponse.json({
-      ...response,
+      finalAds,
       _debug: {
-        overlayLayerCount: typeof _debugLayers !== "undefined" ? _debugLayers.length : -1,
-        overlayLayers: typeof _debugLayers !== "undefined" ? _debugLayers : [],
-        compositionError: adLabelOverride,
-        useSimpleFallback,
-        productCutoutPresent: !!productCutoutBase64,
-        positionedCalloutCount: positionedCallouts.length,
-        dimensions: { width, height },
+        compositionError,
+        logs: debugLogs,
+        productBounds,
       },
-      productIntelligence: productIntel
-        ? {
-            name: productIntel.name,
-            category: productIntel.category,
-            features: productIntel.features,
-            sceneUsed: imagePromptText.slice(0, 100),
-          }
-        : null,
-    })
-  } catch (err: unknown) {
+      productIntelligence
+    });
+} catch (err: unknown) {
     console.error("Pipeline error:", err)
     const msg = err instanceof Error ? err.message : "Pipeline failed"
     return NextResponse.json({ error: msg }, { status: 500 })

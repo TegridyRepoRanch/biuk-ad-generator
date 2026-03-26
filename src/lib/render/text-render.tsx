@@ -26,45 +26,40 @@ export async function renderOverlayPng(
   callouts: Array<{ text: string; position: { x: number; y: number } }>,
   bannerColor: string,
   bannerText: string
-): Promise<Buffer> {
-  const font = loadFont()
+): Promise<{ buffer: Buffer; logs: string[] }> {
+  const logs: string[] = []
+  try {
+    const font = loadFont()
+    logs.push(`Font loaded, size: ${font.byteLength}`)
 
-  const overlayElement = buildAdOverlaySvg(width, height, headline, subhead, callouts, bannerColor, bannerText);
+    const overlayElement = buildAdOverlaySvg(width, height, headline, subhead, callouts, bannerColor, bannerText);
+    logs.push(`Overlay element created.`)
 
-  console.log(`[renderOverlayPng] Starting. Width: ${width}, Height: ${height}, Headline: "${headline}", Callouts: ${callouts.length}`)
+    const svg = await satori(overlayElement, {
+      width,
+      height,
+      fonts: [
+        { name: "Inter", data: font, weight: 700, style: "normal" as const },
+        { name: "Inter", data: font, weight: 400, style: "normal" as const }
+      ],
+    })
+    logs.push(`SVG generated, length: ${svg.length} bytes`)
 
-  const svg = await satori(overlayElement, {
-    width,
-    height,
-    fonts: [
-      {
-        name: "Inter",
-        data: font,
-        weight: 700,
-        style: "normal" as const,
-      },
-      {
-        name: "Inter",
-        data: font,
-        weight: 400,
-        style: "normal" as const,
-      }
-    ],
-  })
-
-  console.log(`[renderOverlayPng] SVG generated, length: ${svg.length} bytes`)
-
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width" as const, value: width },
-    background: "rgba(0,0,0,0)",
-  })
-  
-  const rendered = resvg.render()
-  const pngBuffer = Buffer.from(rendered.asPng())
-  
-  console.log(`[renderOverlayPng] PNG rendered, size: ${pngBuffer.length} bytes`)
-  
-  return pngBuffer
+    const resvg = new Resvg(svg, {
+      fitTo: { mode: "width" as const, value: width },
+      background: "rgba(0,0,0,0)",
+    })
+    logs.push(`Resvg instance created.`)
+    
+    const rendered = resvg.render()
+    const pngBuffer = Buffer.from(rendered.asPng())
+    logs.push(`PNG rendered, size: ${pngBuffer.length} bytes`)
+    
+    return { buffer: pngBuffer, logs }
+  } catch (error: any) {
+    logs.push(`ERROR in renderOverlayPng: ${error.message}`)
+    return { buffer: Buffer.from(""), logs }
+  }
 }
 
 // Keeping the old text renderer for now in case we need it, but it's unused.
