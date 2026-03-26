@@ -1065,19 +1065,24 @@ async function buildOverlayLayers(
     })
   }
 
-  // 5. Callout bubbles (dark rounded rect + text)
+  // 5. Callout bubbles (dark rounded rect + text) — use sharp create instead of SVG
   for (const callout of callouts) {
     const bubbleW = 200
     const bubbleH = 80
-    const rx = 12
     const cx = callout.position.x
     const cy = callout.position.y
 
-    // Create bubble as SVG rect (no text — just the shape)
-    const bubbleSvg = `<svg width="${bubbleW}" height="${bubbleH}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="1" y="1" width="${bubbleW - 2}" height="${bubbleH - 2}" rx="${rx}" fill="rgba(0,0,0,0.75)" stroke="${escapeXml(bannerColor)}" stroke-width="3"/>
-    </svg>`
-    const bubbleBuf = await sharp(Buffer.from(bubbleSvg)).png().toBuffer()
+    // Create bubble as solid color rectangle using sharp (no SVG issues on Vercel)
+    const bubbleBuf = await sharp({
+      create: {
+        width: bubbleW,
+        height: bubbleH,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0.9 },  // dark semi-transparent
+      },
+    })
+      .png()
+      .toBuffer()
     
     const bx = Math.max(0, Math.min(width - bubbleW, Math.round(cx - bubbleW / 2)))
     const by = Math.max(0, Math.min(height - bubbleH, Math.round(cy - bubbleH / 2)))
