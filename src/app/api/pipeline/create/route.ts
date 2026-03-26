@@ -918,6 +918,72 @@ function autoPositionCallouts(
   })
 }
 
+// ── SVG Overlay Generator (for sharp composition) ────────────────
+
+function createAdOverlaySvg(
+  width: number,
+  height: number,
+  headline: string,
+  subhead: string | null | undefined,
+  cta: string,
+  callouts: Array<{ text: string; position: { x: number; y: number } }>,
+  bannerColor: string,
+  bannerText: string
+): string {
+  const bannerH = Math.round(height * 0.09)
+  const bannerY = height - bannerH
+  
+  // Headline zone (top ~20%)
+  const headlineY = Math.round(height * 0.15)
+  const headlineMaxWidth = width - 100
+  
+  // SVG with embedded styles
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <style>
+    .headline { font-family: DejaVuSans-Bold, sans-serif; font-size: 52px; font-weight: bold; fill: white; text-anchor: middle; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+    .subhead { font-family: DejaVuSans, sans-serif; font-size: 28px; fill: white; text-anchor: middle; text-shadow: 1px 1px 3px rgba(0,0,0,0.8); }
+    .callout-text { font-family: DejaVuSans-Bold, sans-serif; font-size: 18px; fill: white; text-anchor: middle; }
+    .cta { font-family: DejaVuSans-Bold, sans-serif; font-size: 20px; fill: white; }
+  </style>
+</defs>`
+  
+  // Banner (bottom)
+  svg += `\n<rect x="0" y="${bannerY}" width="${width}" height="${bannerH}" fill="${bannerColor}"/>`
+  svg += `\n<text x="${width / 2}" y="${bannerY + bannerH / 2 + 12}" class="cta">${bannerText}</text>`
+  
+  // Headline
+  svg += `\n<text x="${width / 2}" y="${headlineY}" class="headline">${headline}</text>`
+  
+  // Subhead (if provided)
+  if (subhead) {
+    svg += `\n<text x="${width / 2}" y="${headlineY + 50}" class="subhead">${subhead}</text>`
+  }
+  
+  // Callout bubbles (simple circles with text for now)
+  for (const callout of callouts) {
+    const bubbleR = 95
+    const x = callout.position.x
+    const y = callout.position.y
+    
+    // Dark rounded bubble
+    svg += `\n<circle cx="${x}" cy="${y}" r="${bubbleR}" fill="rgba(0,0,0,0.75)" stroke="${bannerColor}" stroke-width="3"/>`
+    
+    // Connector line (optional - can add if needed)
+    
+    // Text (centered in bubble)
+    const lines = callout.text.split("\n")
+    for (let i = 0; i < lines.length; i++) {
+      const lineY = y + (i - lines.length / 2 + 0.5) * 24
+      svg += `\n<text x="${x}" y="${lineY}" class="callout-text">${lines[i]}</text>`
+    }
+  }
+  
+  svg += `\n</svg>`
+  return svg
+}
+
 // ── Product image helpers ─────────────────────────────────────────
 
 async function scrapeProductHeroImage(productUrl: string): Promise<string | null> {
@@ -1777,30 +1843,59 @@ export async function POST(request: NextRequest) {
     const textY = messageZone.y
     const maxTextW = messageZone.width
 
+    // Use sharp for server-side composition (Vercel-compatible, no native deps)
     let finalImageDataUrl: string
     let useSimpleFallback = false
 
     try {
-      finalImageDataUrl = await renderAdServerSide(
-        imageBase64,
+      const sharp = await import("sharp")
+      
+      // Fetch background image
+      const bgResponse = await fetch(generatedImageUrl)
+      if (!bgResponse.ok) throw new Error("Failed to fetch generated background")
+      const bgBuffer = Buffer.from(await bgResponse.arrayBuffer())
+      
+      // Create SVG with text + callouts + banner (sharp can render SVG)
+      const svgOverlay = createAdOverlaySvg(
         width,
         height,
         headlineOverride ?? selectedHeadline.headline,
         subheadOverride ?? selectedHeadline.subhead,
         selectedHeadline.cta,
-        contrast,
         positionedCallouts,
-        textX,
-        textY,
-        maxTextW,
         bannerColor,
-        bannerText,
-        productCutoutBase64
+        bannerText
       )
-    } catch (canvasErr) {
-      const err = canvasErr as Error
-      logWarn(ROUTE_NAME, `Canvas rendering failed: ${err.message}\nStack: ${err.stack}`)
-      console.error("CANVAS_RENDER_FAILURE:", err.message, err.stack)
+      
+      // Composite: background + SVG overlay + product cutout (if available)
+      let composed = sharp(bgBuffer)
+      
+      // Add SVG text/callouts overlay
+      composed = composed.composite([
+        {
+          input: Buffer.from(svgOverlay),
+          gravity: "northwest" as any,
+        },
+      ])
+      
+      // Add product cutout on top if available
+      if (productCutoutBase64) {
+        const cutoutBuf = Buffer.from(productCutoutBase64, "base64")
+        composed = composed.composite([
+          {
+            input: cutoutBuf,
+            left: Math.round((width - 431) / 2), // Center horizontally (product is 431px)
+            top: 402, // Approved Y position
+          },
+        ])
+      }
+      
+      const composedBuffer = await composed.png().toBuffer()
+      finalImageDataUrl = `data:image/png;base64,${composedBuffer.toString("base64")}`
+      logInfo(ROUTE_NAME, "Step 6: Sharp composition succeeded")
+    } catch (sharpErr) {
+      const err = sharpErr as Error
+      logWarn(ROUTE_NAME, `Sharp composition failed: ${err.message}, using raw background`)
       useSimpleFallback = true
       finalImageDataUrl = generatedImageUrl
     }
