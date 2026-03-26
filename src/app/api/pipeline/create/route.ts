@@ -920,6 +920,15 @@ function autoPositionCallouts(
 
 // ── SVG Overlay Generator (for sharp composition) ────────────────
 
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
+}
+
 function createAdOverlaySvg(
   width: number,
   height: number,
@@ -935,48 +944,47 @@ function createAdOverlaySvg(
   
   // Headline zone (top ~20%)
   const headlineY = Math.round(height * 0.15)
-  const headlineMaxWidth = width - 100
   
   // SVG with embedded styles
   let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
 <defs>
   <style>
-    .headline { font-family: DejaVuSans-Bold, sans-serif; font-size: 52px; font-weight: bold; fill: white; text-anchor: middle; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
-    .subhead { font-family: DejaVuSans, sans-serif; font-size: 28px; fill: white; text-anchor: middle; text-shadow: 1px 1px 3px rgba(0,0,0,0.8); }
-    .callout-text { font-family: DejaVuSans-Bold, sans-serif; font-size: 18px; fill: white; text-anchor: middle; }
-    .cta { font-family: DejaVuSans-Bold, sans-serif; font-size: 20px; fill: white; }
+    .headline { font-family: sans-serif; font-size: 52px; font-weight: bold; fill: white; text-anchor: middle; }
+    .subhead { font-family: sans-serif; font-size: 28px; fill: white; text-anchor: middle; }
+    .callout-text { font-family: sans-serif; font-size: 18px; font-weight: bold; fill: white; text-anchor: middle; }
+    .cta { font-family: sans-serif; font-size: 20px; font-weight: bold; fill: white; text-anchor: middle; }
   </style>
 </defs>`
   
-  // Banner (bottom)
-  svg += `\n<rect x="0" y="${bannerY}" width="${width}" height="${bannerH}" fill="${bannerColor}"/>`
-  svg += `\n<text x="${width / 2}" y="${bannerY + bannerH / 2 + 12}" class="cta">${bannerText}</text>`
+  // Headline shadow (dark stroke behind white text)
+  svg += `\n<text x="${width / 2}" y="${headlineY}" class="headline" stroke="rgba(0,0,0,0.7)" stroke-width="4" paint-order="stroke">${escapeXml(headline)}</text>`
   
-  // Headline
-  svg += `\n<text x="${width / 2}" y="${headlineY}" class="headline">${headline}</text>`
+  // Banner (bottom)
+  svg += `\n<rect x="0" y="${bannerY}" width="${width}" height="${bannerH}" fill="${escapeXml(bannerColor)}"/>`
+  svg += `\n<text x="${width / 2}" y="${bannerY + bannerH / 2 + 7}" class="cta">${escapeXml(bannerText)}</text>`
   
   // Subhead (if provided)
   if (subhead) {
-    svg += `\n<text x="${width / 2}" y="${headlineY + 50}" class="subhead">${subhead}</text>`
+    svg += `\n<text x="${width / 2}" y="${headlineY + 50}" class="subhead" stroke="rgba(0,0,0,0.5)" stroke-width="3" paint-order="stroke">${escapeXml(subhead)}</text>`
   }
   
-  // Callout bubbles (simple circles with text for now)
+  // Callout bubbles
   for (const callout of callouts) {
-    const bubbleR = 95
+    const bubbleW = 190
+    const bubbleH = 76
     const x = callout.position.x
     const y = callout.position.y
+    const rx = 12
     
-    // Dark rounded bubble
-    svg += `\n<circle cx="${x}" cy="${y}" r="${bubbleR}" fill="rgba(0,0,0,0.75)" stroke="${bannerColor}" stroke-width="3"/>`
-    
-    // Connector line (optional - can add if needed)
+    // Dark rounded rect bubble with brand-color outline
+    svg += `\n<rect x="${x - bubbleW / 2}" y="${y - bubbleH / 2}" width="${bubbleW}" height="${bubbleH}" rx="${rx}" fill="rgba(0,0,0,0.75)" stroke="${escapeXml(bannerColor)}" stroke-width="3"/>`
     
     // Text (centered in bubble)
     const lines = callout.text.split("\n")
     for (let i = 0; i < lines.length; i++) {
-      const lineY = y + (i - lines.length / 2 + 0.5) * 24
-      svg += `\n<text x="${x}" y="${lineY}" class="callout-text">${lines[i]}</text>`
+      const lineY = y + (i - lines.length / 2 + 0.5) * 22
+      svg += `\n<text x="${x}" y="${lineY}" class="callout-text">${escapeXml(lines[i])}</text>`
     }
   }
   
