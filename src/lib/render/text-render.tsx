@@ -30,11 +30,14 @@ export async function renderTextPng(
   text: string,
   opts: { fontSize?: number; bold?: boolean; color?: string; maxWidth?: number; align?: string }
 ): Promise<{ buffer: Buffer; width: number; height: number }> {
+  console.log('[renderTextPng] START:', { text: text.slice(0, 30), fontSize: opts.fontSize });
   const sz = opts.fontSize ?? 32
   const color = opts.color ?? "white"
   const align = (opts.align ?? "center") as "center" | "left" | "right"
   const maxWidth = opts.maxWidth ?? 900
+  console.log('[renderTextPng] Loading font...');
   const font = loadFont()
+  console.log('[renderTextPng] Font loaded, bytes:', font.byteLength);
 
   const justifyContent = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center"
 
@@ -56,6 +59,7 @@ export async function renderTextPng(
     </div>
   )
 
+  console.log('[renderTextPng] Calling satori...');
   const svg = await satori(element, {
     width: maxWidth,
     fonts: [
@@ -68,12 +72,16 @@ export async function renderTextPng(
     ],
   })
 
+  console.log('[renderTextPng] Satori done, SVG bytes:', svg.length);
   const resvg = new Resvg(svg, {
     fitTo: { mode: "width" as const, value: maxWidth },
     background: "rgba(0,0,0,0)",
   })
+  console.log('[renderTextPng] Calling resvg.render()...');
   const rendered = resvg.render()
+  console.log('[renderTextPng] Resvg done');
   const pngBuffer = rendered.asPng()
 
+  console.log('[renderTextPng] DONE:', { width: rendered.width, height: rendered.height });
   return { buffer: Buffer.from(pngBuffer), width: rendered.width, height: rendered.height }
 }
