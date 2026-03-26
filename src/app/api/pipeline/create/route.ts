@@ -1798,7 +1798,9 @@ export async function POST(request: NextRequest) {
         productCutoutBase64
       )
     } catch (canvasErr) {
-      logWarn(ROUTE_NAME, `Canvas rendering failed (${(canvasErr as Error).message}), using fallback`)
+      const err = canvasErr as Error
+      logWarn(ROUTE_NAME, `Canvas rendering failed: ${err.message}\nStack: ${err.stack}`)
+      console.error("CANVAS_RENDER_FAILURE:", err.message, err.stack)
       useSimpleFallback = true
       finalImageDataUrl = generatedImageUrl
     }
