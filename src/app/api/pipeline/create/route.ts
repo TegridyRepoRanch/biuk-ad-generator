@@ -1848,7 +1848,8 @@ export async function POST(request: NextRequest) {
     let useSimpleFallback = false
 
     try {
-      const sharp = await import("sharp")
+      const sharpModule = await import("sharp")
+      const sharp = sharpModule.default
       
       // Fetch background image
       const bgResponse = await fetch(generatedImageUrl)
